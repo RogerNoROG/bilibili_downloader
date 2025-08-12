@@ -79,7 +79,8 @@ def generate_download_bat(bv_list: List[str], save_path: str, sessdata: str) -> 
 
 
 def generate_download_sh(bv_list: List[str], save_path: str, sessdata: str) -> str:
-    sh = 'download_videos.sh'
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    sh = os.path.join(project_root, 'download_videos.sh')
     print(f"📝 生成下载脚本（共 {len(bv_list)} 个 BV）...")
     lines = [
         '#!/usr/bin/env bash',
@@ -121,7 +122,7 @@ def run_download() -> Tuple[str, float, float]:
     else:
         script = generate_download_sh(bv_list, save_path, sessdata)
         print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的 download_videos.sh！")
-        print("▶️ 正在执行下载脚本，请等待其完成...")
+        print(f"▶️ 正在执行下载脚本：{script}，请等待其完成...")
 
     # 记录下载前的文件状态
     before_files = set(os.listdir(save_path)) if os.path.exists(save_path) else set()
@@ -130,7 +131,8 @@ def run_download() -> Tuple[str, float, float]:
     if sys.platform.startswith('win'):
         subprocess.run(f'start "" /wait cmd /c "{script}"', shell=True)
     else:
-        subprocess.run([script], shell=False)
+        # 使用 bash 显式执行，避免执行权限或 shebang 被忽略导致的问题
+        subprocess.run(['bash', script], shell=False, cwd=os.path.dirname(script))
     end_time = time.time()
     print("✅ 下载完成，继续后续操作...")
 
