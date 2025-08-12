@@ -82,8 +82,8 @@ def _ensure_dependencies():
         print("📦 配置pip使用南京大学镜像源...")
         pip_config_dir = os.path.join(venv_dir, 'pip.conf')
         pip_config_content = """[global]
-index-url = https://pypi.nju.edu.cn/simple/
-trusted-host = pypi.nju.edu.cn
+index-url = https://mirror.nju.edu.cn/pypi/web/simple/
+trusted-host = mirror.nju.edu.cn
 """
         with open(pip_config_dir, 'w', encoding='utf-8') as f:
             f.write(pip_config_content)
