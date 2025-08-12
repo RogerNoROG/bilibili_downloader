@@ -136,6 +136,8 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
             'hevc_amf': 'AMD H.265 (AMF)',
             'h264_vaapi': 'VAAPI H.264',
             'hevc_vaapi': 'VAAPI H.265',
+            'h264_qsv': 'Intel H.264 (QSV)',
+            'hevc_qsv': 'Intel H.265 (QSV)',
         }
     elif 'darwin' in system:
         candidates = {
@@ -179,6 +181,25 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
                     '-vf', 'format=nv12,hwupload',
                     '-c:v', enc, '-t', '1', '-f', 'null', '-'
                 ]
+            elif enc.endswith('_qsv'):
+                # Prefer init_hw_device path, fallback to -hwaccel qsv
+                if vaapi_dev:
+                    test_cmd = [
+                        ffmpeg, '-y',
+                        '-init_hw_device', f'qsv=hw:{vaapi_dev}',
+                        '-filter_hw_device', 'hw',
+                        '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
+                        '-vf', 'format=nv12,hwupload=extra_hw_frames=64',
+                        '-c:v', enc, '-t', '1', '-f', 'null', '-'
+                    ]
+                else:
+                    test_cmd = [
+                        ffmpeg, '-y',
+                        '-hwaccel', 'qsv',
+                        '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
+                        '-vf', 'format=nv12,hwupload=extra_hw_frames=64',
+                        '-c:v', enc, '-t', '1', '-f', 'null', '-'
+                    ]
             else:
                 test_cmd = [
                     ffmpeg, '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',

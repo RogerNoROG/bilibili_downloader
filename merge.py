@@ -221,21 +221,23 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             subtitle_entries: List[tuple] = []
             gap = os.path.join(tmpdir, 'gap.ts')
             print("🎨 生成2秒无声黑屏（TS 容器）...")
-            gap_cmd = [
-                'ffmpeg', '-y',
-            ]
+            gap_cmd = ['ffmpeg', '-y']
             if encoder.endswith('_vaapi'):
                 gap_cmd += ['-vaapi_device', '/dev/dri/renderD128']
+            elif encoder.endswith('_qsv'):
+                gap_cmd += ['-hwaccel', 'qsv']
             gap_cmd += [
                 '-f', 'lavfi', '-i', f"color=c=black:s=1920x1080:d=2:r={TRANSCODE_PARAMS['fps']}",
                 '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
             ]
             if encoder.endswith('_vaapi'):
                 gap_cmd += ['-vf', 'format=nv12,hwupload']
+            elif encoder.endswith('_qsv'):
+                gap_cmd += ['-vf', 'format=nv12,hwupload=extra_hw_frames=64']
             gap_cmd += [
                 '-c:v', encoder,
             ]
-            if not encoder.endswith('_vaapi'):
+            if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
                 gap_cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
             gap_cmd += [
                 '-c:a', 'aac',
@@ -268,16 +270,20 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
                 cmd: List[str] = ['ffmpeg', '-y']
                 if encoder.endswith('_vaapi'):
                     cmd += ['-vaapi_device', '/dev/dri/renderD128']
+                elif encoder.endswith('_qsv'):
+                    cmd += ['-hwaccel', 'qsv']
                 cmd += ['-i', f]
                 vf_chain = list(vf_filters)
                 if encoder.endswith('_vaapi'):
                     vf_chain += ['format=nv12', 'hwupload']
+                elif encoder.endswith('_qsv'):
+                    vf_chain += ['format=nv12', 'hwupload=extra_hw_frames=64']
                 cmd += ['-vf', ','.join(vf_chain)]
                 cmd += [
                     '-r', str(TRANSCODE_PARAMS['fps']),
                     '-vsync', 'cfr',
                 ]
-                if not encoder.endswith('_vaapi'):
+                if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
                     cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
                 cmd += [
                     '-c:v', encoder,
@@ -317,11 +323,11 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
                 ])
             except Exception:
                 print("⚠️ 直接拷贝合并失败，回退到重编码合并（保证时间戳单调）...")
-                reenc_cmd: List[str] = [
-                    'ffmpeg', '-y',
-                ]
+                reenc_cmd: List[str] = ['ffmpeg', '-y']
                 if encoder.endswith('_vaapi'):
                     reenc_cmd += ['-vaapi_device', '/dev/dri/renderD128']
+                elif encoder.endswith('_qsv'):
+                    reenc_cmd += ['-hwaccel', 'qsv']
                 reenc_cmd += [
                     '-fflags', '+genpts',
                     '-f', 'concat',
@@ -330,7 +336,7 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
                     '-c:v', encoder,
                     '-r', str(TRANSCODE_PARAMS['fps']),
                 ]
-                if not encoder.endswith('_vaapi'):
+                if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
                     reenc_cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
                 reenc_cmd += [
                     '-c:a', 'aac',
