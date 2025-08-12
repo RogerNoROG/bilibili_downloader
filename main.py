@@ -29,33 +29,81 @@ def ask_execute(task_name: str, task_function, *args, **kwargs):
 def _ensure_dependencies():
     """在导入任何依赖这些库的模块前，确保第三方依赖已安装。"""
     print("📦 检查并安装依赖...")
-    # Linux: 用 apt 安装系统依赖，并使用本地虚拟环境安装 Python 包，避免 PEP 668 限制
+    
+    # Linux: 检测并安装系统依赖，使用虚拟环境安装Python包
     if sys.platform.startswith('linux'):
         def _has_cmd(cmd: str) -> bool:
             return shutil.which(cmd) is not None
 
-        if _has_cmd('apt') or _has_cmd('apt-get'):
-            apt_cmd = 'apt' if _has_cmd('apt') else 'apt-get'
-            env = os.environ.copy()
-            env['DEBIAN_FRONTEND'] = 'noninteractive'
-            try:
-                print("🧰 通过 apt 安装系统依赖（需要 sudo）：ffmpeg、python3-venv")
-                subprocess.run(['sudo', apt_cmd, 'update', '-y'], check=False, env=env)
-                subprocess.run(['sudo', apt_cmd, 'install', '-y', 'ffmpeg', 'python3-venv'], check=True, env=env)
-            except Exception as e:
-                print(f"⚠️ apt 安装系统依赖失败：{e}，继续尝试后续步骤。")
+        # 检测系统依赖
+        missing_system_deps = []
+        if not _has_cmd('ffmpeg'):
+            missing_system_deps.append('ffmpeg')
+        if not _has_cmd('pip') and not _has_cmd('pip3'):
+            missing_system_deps.append('python3-pip')
+        
+        # 如果缺少系统依赖，尝试通过apt安装
+        if missing_system_deps:
+            if _has_cmd('apt') or _has_cmd('apt-get'):
+                apt_cmd = 'apt' if _has_cmd('apt') else 'apt-get'
+                env = os.environ.copy()
+                env['DEBIAN_FRONTEND'] = 'noninteractive'
+                try:
+                    print(f"🧰 检测到缺少系统依赖: {', '.join(missing_system_deps)}")
+                    print("🧰 通过 apt 安装系统依赖（需要 sudo）...")
+                    subprocess.run(['sudo', apt_cmd, 'update', '-y'], check=False, env=env)
+                    subprocess.run(['sudo', apt_cmd, 'install', '-y'] + missing_system_deps, check=True, env=env)
+                    print("✅ 系统依赖安装完成")
+                except Exception as e:
+                    print(f"⚠️ apt 安装系统依赖失败：{e}")
+                    print("请手动安装以下依赖：")
+                    for dep in missing_system_deps:
+                        print(f"  - {dep}")
+                    sys.exit(1)
+            else:
+                print("❌ 未检测到 apt 包管理器，请手动安装以下依赖：")
+                for dep in missing_system_deps:
+                    print(f"  - {dep}")
+                sys.exit(1)
+        else:
+            print("✅ 系统依赖检查通过")
 
         # 使用项目本地虚拟环境安装 Python 包
         project_root = os.path.dirname(os.path.abspath(__file__))
         venv_dir = os.path.join(project_root, '.venv')
         venv_python = os.path.join(venv_dir, 'bin', 'python')
+        venv_pip = os.path.join(venv_dir, 'bin', 'pip')
+        
         if not os.path.exists(venv_python):
             print("🐍 正在创建虚拟环境 .venv ...")
             subprocess.run(['python3', '-m', 'venv', venv_dir], check=True)
+        
+        # 配置pip使用南京大学镜像源
+        print("📦 配置pip使用南京大学镜像源...")
+        pip_config_dir = os.path.join(venv_dir, 'pip.conf')
+        pip_config_content = """[global]
+index-url = https://pypi.nju.edu.cn/simple/
+trusted-host = pypi.nju.edu.cn
+"""
+        with open(pip_config_dir, 'w', encoding='utf-8') as f:
+            f.write(pip_config_content)
+        
+        # 设置环境变量确保pip使用配置
+        os.environ['PIP_CONFIG_FILE'] = pip_config_dir
+        
         # 升级 pip 并安装包
-        print("📦 在虚拟环境中安装 Python 依赖（playwright、yutto）...")
+        print("📦 在虚拟环境中安装 Python 依赖...")
         subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip'], check=True)
-        subprocess.run([venv_python, '-m', 'pip', 'install', 'playwright', 'yutto'], check=True)
+        
+        # 检查requirements.txt是否存在
+        requirements_file = os.path.join(project_root, 'requirements.txt')
+        if os.path.exists(requirements_file):
+            print("📦 从 requirements.txt 安装依赖...")
+            subprocess.run([venv_pip, 'install', '-r', requirements_file], check=True)
+        else:
+            print("📦 安装默认依赖（playwright、yutto）...")
+            subprocess.run([venv_pip, 'install', 'playwright', 'yutto'], check=True)
+        
         # 安装 Playwright 浏览器内核
         os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
         subprocess.run([venv_python, '-m', 'playwright', 'install', 'chromium'], check=False)
