@@ -3,6 +3,7 @@ import sys
 import time
 import re
 import subprocess
+import shlex
 from typing import List, Tuple
 
 
@@ -77,6 +78,29 @@ def generate_download_bat(bv_list: List[str], save_path: str, sessdata: str) -> 
     return bat
 
 
+def generate_download_sh(bv_list: List[str], save_path: str, sessdata: str) -> str:
+    sh = 'download_videos.sh'
+    print(f"📝 生成下载脚本（共 {len(bv_list)} 个 BV）...")
+    lines = [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail'
+    ]
+    py = shlex.quote(sys.executable)
+    save_q = shlex.quote(save_path)
+    sess_q = shlex.quote(sessdata)
+    for bv in bv_list:
+        bv_q = shlex.quote(bv)
+        lines.append(f"{py} -m yutto -c {sess_q} -d {save_q} {bv_q}")
+    with open(sh, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    # 添加可执行权限
+    try:
+        os.chmod(sh, os.stat(sh).st_mode | 0o111)
+    except Exception:
+        pass
+    return sh
+
+
 def run_download() -> Tuple[str, float, float]:
     save_path = get_save_path()
     sessdata = get_sessdata()
@@ -90,15 +114,23 @@ def run_download() -> Tuple[str, float, float]:
     bv_list = extract_bv('\n'.join(input_lines))
     if not bv_list:
         sys.exit("❌ 未识别任何 BV")
-    bat = generate_download_bat(bv_list, save_path, sessdata)
-    print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的download_videos.bat！")
-    print("▶️ 正在启动下载脚本（新窗口），请等待其完成...")
+    if sys.platform.startswith('win'):
+        script = generate_download_bat(bv_list, save_path, sessdata)
+        print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的 download_videos.bat！")
+        print("▶️ 正在启动下载脚本（新窗口），请等待其完成...")
+    else:
+        script = generate_download_sh(bv_list, save_path, sessdata)
+        print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的 download_videos.sh！")
+        print("▶️ 正在执行下载脚本，请等待其完成...")
 
     # 记录下载前的文件状态
     before_files = set(os.listdir(save_path)) if os.path.exists(save_path) else set()
 
     start_time = time.time()
-    subprocess.run(f'start "" /wait cmd /c "{bat}"', shell=True)
+    if sys.platform.startswith('win'):
+        subprocess.run(f'start "" /wait cmd /c "{script}"', shell=True)
+    else:
+        subprocess.run([script], shell=False)
     end_time = time.time()
     print("✅ 下载完成，继续后续操作...")
 
