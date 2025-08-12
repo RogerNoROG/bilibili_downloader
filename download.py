@@ -7,6 +7,22 @@ import shlex
 from typing import List, Tuple
 
 
+def _project_root() -> str:
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def _resolve_venv_python() -> str:
+    root = _project_root()
+    if sys.platform.startswith('win'):
+        candidate = os.path.join(root, '.venv', 'Scripts', 'python.exe')
+    else:
+        candidate = os.path.join(root, '.venv', 'bin', 'python')
+    if os.path.exists(candidate):
+        return candidate
+    # 回退到当前解释器
+    return sys.executable
+
+
 def get_save_path() -> str:
     default = os.path.abspath("download")
     print(f"\n📁 默认保存目录为：{default}")
@@ -73,20 +89,20 @@ def generate_download_bat(bv_list: List[str], save_path: str, sessdata: str) -> 
     with open(bat, 'w', encoding='utf-8', newline='\r\n') as f:
         f.write('@echo off\nchcp 65001 >nul\n')
         for bv in bv_list:
-            exe = sys.executable.replace('\\\\', '/')
+            exe = _resolve_venv_python().replace('\\\\', '/')
             f.write(f'"{exe}" -m yutto -c "{sessdata}" -d "{save_path}" {bv}\n')
     return bat
 
 
 def generate_download_sh(bv_list: List[str], save_path: str, sessdata: str) -> str:
-    project_root = os.path.dirname(os.path.abspath(__file__))
+    project_root = _project_root()
     sh = os.path.join(project_root, 'download_videos.sh')
     print(f"📝 生成下载脚本（共 {len(bv_list)} 个 BV）...")
     lines = [
         '#!/usr/bin/env bash',
         'set -euo pipefail'
     ]
-    py = shlex.quote(sys.executable)
+    py = shlex.quote(_resolve_venv_python())
     save_q = shlex.quote(save_path)
     sess_q = shlex.quote(sessdata)
     for bv in bv_list:
