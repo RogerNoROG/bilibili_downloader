@@ -206,6 +206,15 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
         if cmd and isinstance(cmd[0], str) and os.path.basename(cmd[0]).lower() in ('ffmpeg', 'ffmpeg.exe'):
             ffmpeg = get_ffmpeg_path() or cmd[0]
             cmd = [ffmpeg] + cmd[1:]
+
+        # 在 Linux 下，为了确保硬件编解码权限，若非 root 且存在 sudo，则使用 sudo 执行
+        if sys.platform.startswith('linux'):
+            try:
+                is_root = (os.geteuid() == 0)
+            except Exception:
+                is_root = False
+            if not is_root and shutil.which('sudo'):
+                cmd = ['sudo', '-E'] + cmd
         result = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
@@ -213,6 +222,24 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
             text=False,
             timeout=timeout_seconds,
         )
+        # 如以 sudo 执行，尽量将输出文件归还给当前用户，避免后续操作权限问题
+        try:
+            if sys.platform.startswith('linux') and shutil.which('sudo'):
+                try:
+                    is_root = (os.geteuid() == 0)
+                except Exception:
+                    is_root = False
+                if not is_root and result.returncode == 0:
+                    # 约定：命令最后一个参数是输出路径（本项目当前所有调用均符合）
+                    if cmd and isinstance(cmd[-1], str) and cmd[-1] not in ('-', 'pipe:', '|'):
+                        output_path = cmd[-1]
+                        if os.path.exists(output_path):
+                            uid = os.getuid()
+                            gid = os.getgid()
+                            subprocess.run(['sudo', 'chown', f'{uid}:{gid}', output_path],
+                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
         if result.returncode != 0:
             stderr_text = (result.stderr or b'').decode('utf-8', errors='ignore')
             print(f"❌ FFmpeg命令执行失败: {' '.join(cmd)}")
