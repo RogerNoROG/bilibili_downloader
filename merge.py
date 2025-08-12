@@ -221,18 +221,30 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             subtitle_entries: List[tuple] = []
             gap = os.path.join(tmpdir, 'gap.ts')
             print("🎨 生成2秒无声黑屏（TS 容器）...")
-            run_ffmpeg([
+            gap_cmd = [
                 'ffmpeg', '-y',
+            ]
+            if encoder.endswith('_vaapi'):
+                gap_cmd += ['-vaapi_device', '/dev/dri/renderD128']
+            gap_cmd += [
                 '-f', 'lavfi', '-i', f"color=c=black:s=1920x1080:d=2:r={TRANSCODE_PARAMS['fps']}",
                 '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+            ]
+            if encoder.endswith('_vaapi'):
+                gap_cmd += ['-vf', 'format=nv12,hwupload']
+            gap_cmd += [
                 '-c:v', encoder,
-                '-pix_fmt', TRANSCODE_PARAMS['pix_fmt'],
+            ]
+            if not encoder.endswith('_vaapi'):
+                gap_cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
+            gap_cmd += [
                 '-c:a', 'aac',
                 '-b:a', TRANSCODE_PARAMS['audio_bitrate'],
                 '-t', '2',
                 '-f', 'mpegts',
                 gap
-            ])
+            ]
+            run_ffmpeg(gap_cmd)
 
             clip_durations: List[float] = []
             for i, f in enumerate(tmp_files):
@@ -253,13 +265,21 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
                 vf_filters.append(f"fps={TRANSCODE_PARAMS['fps']}")
                 print(f"    ➡️ 视频滤镜: {','.join(vf_filters)}")
 
-                cmd = [
-                    'ffmpeg', '-y',
-                    '-i', f,
-                    '-vf', ','.join(vf_filters),
+                cmd: List[str] = ['ffmpeg', '-y']
+                if encoder.endswith('_vaapi'):
+                    cmd += ['-vaapi_device', '/dev/dri/renderD128']
+                cmd += ['-i', f]
+                vf_chain = list(vf_filters)
+                if encoder.endswith('_vaapi'):
+                    vf_chain += ['format=nv12', 'hwupload']
+                cmd += ['-vf', ','.join(vf_chain)]
+                cmd += [
                     '-r', str(TRANSCODE_PARAMS['fps']),
                     '-vsync', 'cfr',
-                    '-pix_fmt', TRANSCODE_PARAMS['pix_fmt'],
+                ]
+                if not encoder.endswith('_vaapi'):
+                    cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
+                cmd += [
                     '-c:v', encoder,
                     '-b:v', TRANSCODE_PARAMS['bitrate'],
                     '-c:a', 'aac',
@@ -297,20 +317,28 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
                 ])
             except Exception:
                 print("⚠️ 直接拷贝合并失败，回退到重编码合并（保证时间戳单调）...")
-                run_ffmpeg([
+                reenc_cmd: List[str] = [
                     'ffmpeg', '-y',
+                ]
+                if encoder.endswith('_vaapi'):
+                    reenc_cmd += ['-vaapi_device', '/dev/dri/renderD128']
+                reenc_cmd += [
                     '-fflags', '+genpts',
                     '-f', 'concat',
                     '-safe', '0',
                     '-i', concat_file,
                     '-c:v', encoder,
                     '-r', str(TRANSCODE_PARAMS['fps']),
-                    '-pix_fmt', TRANSCODE_PARAMS['pix_fmt'],
+                ]
+                if not encoder.endswith('_vaapi'):
+                    reenc_cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
+                reenc_cmd += [
                     '-c:a', 'aac',
                     '-b:a', TRANSCODE_PARAMS['audio_bitrate'],
                     '-movflags', '+faststart',
                     output
-                ])
+                ]
+                run_ffmpeg(reenc_cmd)
             print(f"\n✅ 合并完成：{output}")
 
             merged_subtitle = None

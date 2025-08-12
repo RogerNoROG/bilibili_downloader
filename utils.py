@@ -39,6 +39,24 @@ def get_ffplay_path() -> str | None:
     return _resolve_tool('ffplay')
 
 
+def get_vaapi_device_path() -> str | None:
+    """返回可用的 VAAPI render 节点，如 /dev/dri/renderD128。若不可用返回 None。"""
+    if not sys.platform.startswith('linux'):
+        return None
+    dri_dir = '/dev/dri'
+    try:
+        if not os.path.isdir(dri_dir):
+            return None
+        candidates: List[str] = []
+        for name in os.listdir(dri_dir):
+            if name.startswith('renderD'):
+                candidates.append(os.path.join(dri_dir, name))
+        candidates.sort()
+        return candidates[0] if candidates else None
+    except Exception:
+        return None
+
+
 def check_ffmpeg_installed() -> None:
     """检查 ffmpeg/ffprobe 是否可用；优先使用 PATH，其次程序同目录。"""
     tools = [
@@ -147,10 +165,21 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
             continue
         try:
             ffmpeg = get_ffmpeg_path() or 'ffmpeg'
-            test_cmd = [
-                ffmpeg, '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
-                '-c:v', enc, '-t', '1', '-f', 'null', '-'
-            ]
+            vaapi_dev = get_vaapi_device_path()
+            if enc.endswith('_vaapi'):
+                test_cmd = [ffmpeg, '-y']
+                if vaapi_dev:
+                    test_cmd += ['-vaapi_device', vaapi_dev]
+                test_cmd += [
+                    '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
+                    '-vf', 'format=nv12,hwupload',
+                    '-c:v', enc, '-t', '1', '-f', 'null', '-'
+                ]
+            else:
+                test_cmd = [
+                    ffmpeg, '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
+                    '-c:v', enc, '-t', '1', '-f', 'null', '-'
+                ]
             result = subprocess.run(
                 test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding='utf-8', errors='ignore', timeout=8

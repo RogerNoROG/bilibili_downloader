@@ -110,7 +110,6 @@ def generate_download_sh(bv_list: List[str], save_path: str, sessdata: str) -> s
         lines.append(f"{py} -m yutto -c {sess_q} -d {save_q} {bv_q}")
     with open(sh, 'w', encoding='utf-8', newline='\n') as f:
         f.write('\n'.join(lines) + '\n')
-    # 添加可执行权限
     try:
         os.chmod(sh, os.stat(sh).st_mode | 0o111)
     except Exception:
@@ -131,6 +130,7 @@ def run_download() -> Tuple[str, float, float]:
     bv_list = extract_bv('\n'.join(input_lines))
     if not bv_list:
         sys.exit("❌ 未识别任何 BV")
+    # 生成并执行下载脚本
     if sys.platform.startswith('win'):
         script = generate_download_bat(bv_list, save_path, sessdata)
         print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的 download_videos.bat！")
@@ -147,7 +147,6 @@ def run_download() -> Tuple[str, float, float]:
     if sys.platform.startswith('win'):
         subprocess.run(f'start "" /wait cmd /c "{script}"', shell=True)
     else:
-        # 使用 bash 显式执行，避免执行权限或 shebang 被忽略导致的问题
         subprocess.run(['bash', script], shell=False, cwd=os.path.dirname(script))
     end_time = time.time()
     print("✅ 下载完成，继续后续操作...")
@@ -207,13 +206,7 @@ def run_download_videos_only() -> None:
         print("❌ 未识别任何 BV")
         return
 
-    for bv in bv_list:
-        print(f"⏬ 开始下载 {bv} ...")
-        cmd = [sys.executable, '-m', 'yutto']
-        if sessdata:
-            cmd += ['-c', sessdata]
-        cmd += ['-d', save_path, bv]
-        subprocess.run(cmd, shell=False)
+    _run_yutto_batch(bv_list, save_path, sessdata)
 
     end_time = time.time()
     print("✅ 下载流程结束。")
