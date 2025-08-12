@@ -4,7 +4,6 @@ import time
 import re
 import subprocess
 from typing import List, Tuple
-from playwright.sync_api import sync_playwright
 
 
 def get_save_path() -> str:
@@ -36,6 +35,9 @@ def get_sessdata() -> str:
         sess = open(cache, 'r', encoding='utf-8').read().strip()
         if len(sess) > 10 and input("使用缓存凭据？(Y/n): ").lower() in ("", "y"):
             return sess
+
+    # 延迟导入，确保依赖已安装且当前解释器已切换到虚拟环境
+    from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
