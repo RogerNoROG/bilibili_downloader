@@ -2,30 +2,67 @@ import os
 import sys
 import json
 import platform
+import shutil
 import subprocess
 from typing import List, Tuple
 
 
+def _local_tool_candidates(tool: str) -> list[str]:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    names = [tool]
+    if sys.platform.startswith('win'):
+        names = [f"{tool}.exe", tool]
+    return [os.path.join(base_dir, n) for n in names]
+
+
+def _resolve_tool(tool: str) -> str | None:
+    # 1) PATH 查找
+    path = shutil.which(tool)
+    if path:
+        return path
+    # 2) 脚本所在目录查找（与程序同目录）
+    for cand in _local_tool_candidates(tool):
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def get_ffmpeg_path() -> str | None:
+    return _resolve_tool('ffmpeg')
+
+
+def get_ffprobe_path() -> str | None:
+    return _resolve_tool('ffprobe')
+
+
+def get_ffplay_path() -> str | None:
+    return _resolve_tool('ffplay')
+
+
 def check_ffmpeg_installed() -> None:
-    """检查 ffmpeg/ffprobe 是否可用。不可用则退出并给出提示。"""
+    """检查 ffmpeg/ffprobe 是否可用；优先使用 PATH，其次程序同目录。"""
     tools = [
-        (['ffmpeg', '-version'], 'ffmpeg'),
-        (['ffprobe', '-version'], 'ffprobe')
+        (get_ffmpeg_path(), 'ffmpeg'),
+        (get_ffprobe_path(), 'ffprobe')
     ]
-    for cmd, name in tools:
+    for resolved, name in tools:
+        if not resolved:
+            print(f"❌ 未检测到 {name}，请安装或将其与程序放在同一目录后再运行。")
+            print("参考: https://ffmpeg.org/download.html 或各平台包管理器。")
+            sys.exit(1)
         try:
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            subprocess.run([resolved, '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         except Exception:
-            print(f"❌ 未检测到 {name}，请先安装并加入 PATH 后再运行。")
-            print("参考安装指南: https://ffmpeg.org/download.html 或各平台包管理器。")
+            print(f"❌ {name} 无法执行：{resolved}")
             sys.exit(1)
 
 
 def get_media_duration_seconds(path: str) -> float:
     """使用 ffprobe 获取媒体时长（秒）。失败返回 0.0。"""
     try:
+        ffprobe = get_ffprobe_path() or 'ffprobe'
         probe = subprocess.run(
-            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+            [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
              '-of', 'default=noprint_wrappers=1:nokey=1', path],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='ignore', check=True
@@ -41,6 +78,8 @@ def get_video_resolution(video_path: str):
         '-show_streams', '-select_streams', 'v:0', video_path
     ]
     try:
+        ffprobe = get_ffprobe_path() or 'ffprobe'
+        cmd = [ffprobe if (len(cmd) > 0 and cmd[0] == 'ffprobe') else cmd[0]] + cmd[1:]
         result = subprocess.run(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             text=True, encoding='utf-8', errors='ignore', timeout=10
@@ -90,8 +129,9 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
     candidates.update({'libx264': 'CPU H.264', 'libx265': 'CPU H.265'})
 
     try:
+        ffmpeg = get_ffmpeg_path() or 'ffmpeg'
         result = subprocess.run(
-            ['ffmpeg', '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            [ffmpeg, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
             text=True, encoding='utf-8', errors='ignore'
         )
         ffmpeg_encoders = result.stdout.lower()
@@ -106,8 +146,9 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
             print(f"   ⏩ 跳过: {enc}（ffmpeg 不支持）")
             continue
         try:
+            ffmpeg = get_ffmpeg_path() or 'ffmpeg'
             test_cmd = [
-                'ffmpeg', '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
+                ffmpeg, '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
                 '-c:v', enc, '-t', '1', '-f', 'null', '-'
             ]
             result = subprocess.run(
@@ -161,6 +202,10 @@ def get_video_files(directory: str) -> List[str]:
 def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
     """运行 ffmpeg 命令并检查返回码。使用二进制管道避免编码问题。"""
     try:
+        # 自动解析 ffmpeg 路径（Windows 未在 PATH 且在当前目录的情况）
+        if cmd and isinstance(cmd[0], str) and os.path.basename(cmd[0]).lower() in ('ffmpeg', 'ffmpeg.exe'):
+            ffmpeg = get_ffmpeg_path() or cmd[0]
+            cmd = [ffmpeg] + cmd[1:]
         result = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
