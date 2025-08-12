@@ -159,13 +159,17 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
 
     available: List[Tuple[str, str]] = []
     print("🛠️  正在测试编码器可用性...")
+    vaapi_dev = get_vaapi_device_path() if platform.system().lower().startswith('linux') else None
+    if vaapi_dev:
+        print(f"   🔧 检测到 VAAPI 设备: {vaapi_dev}")
+    elif platform.system().lower().startswith('linux'):
+        print("   ⚠️ 未检测到 VAAPI 设备节点（/dev/dri/renderD*）")
     for enc, desc in candidates.items():
         if enc not in ffmpeg_encoders:
             print(f"   ⏩ 跳过: {enc}（ffmpeg 不支持）")
             continue
         try:
             ffmpeg = get_ffmpeg_path() or 'ffmpeg'
-            vaapi_dev = get_vaapi_device_path()
             if enc.endswith('_vaapi'):
                 test_cmd = [ffmpeg, '-y']
                 if vaapi_dev:
@@ -180,6 +184,7 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
                     ffmpeg, '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
                     '-c:v', enc, '-t', '1', '-f', 'null', '-'
                 ]
+            print(f"   🧪 测试 {enc}: {' '.join(test_cmd)}")
             result = subprocess.run(
                 test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding='utf-8', errors='ignore', timeout=8
@@ -188,7 +193,12 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
                 print(f"   ✅ 可用: {enc} - {desc}")
                 available.append((enc, desc))
             else:
-                print(f"   ❌ 不可用: {enc} - {desc}")
+                err = (result.stderr or "").strip()
+                if err:
+                    err_summary = err[-500:]
+                    print(f"   ❌ 不可用: {enc} - {desc}（错误摘要）:\n      {err_summary}")
+                else:
+                    print(f"   ❌ 不可用: {enc} - {desc}")
         except Exception as e:
             print(f"   ❌ 不可用: {enc} - {desc}（异常: {e}）")
 

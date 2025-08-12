@@ -93,16 +93,17 @@ trusted-host = mirror.nju.edu.cn
         
         # 升级 pip 并安装包
         print("📦 在虚拟环境中安装 Python 依赖...")
-        subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip'], check=True)
+        # 静默升级 pip，减少无关输出
+        subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip', '-q'], check=True)
         
         # 检查requirements.txt是否存在
         requirements_file = os.path.join(project_root, 'requirements.txt')
         if os.path.exists(requirements_file):
             print("📦 从 requirements.txt 安装依赖...")
-            subprocess.run([venv_pip, 'install', '-r', requirements_file], check=True)
+            subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
         else:
             print("📦 安装默认依赖（playwright、yutto）...")
-            subprocess.run([venv_pip, 'install', 'playwright', 'yutto'], check=True)
+            subprocess.run([venv_pip, 'install', 'playwright', 'yutto', '-q'], check=True)
         
         # 安装 Playwright 浏览器内核
         os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
