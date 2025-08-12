@@ -4,9 +4,9 @@ from typing import Optional
 import os
 import sys
 import subprocess
+
+# 注意：此文件在安装第三方依赖前不导入任何第三方模块或依赖这些模块的本地文件
 from utils import check_ffmpeg_installed
-from download import run_download
-from merge import merge_videos_with_best_hevc
 
 
 def ask_execute(task_name: str, task_function, *args, **kwargs):
@@ -24,14 +24,8 @@ def ask_execute(task_name: str, task_function, *args, **kwargs):
         return None
 
 
-def main():
-    print("=" * 60)
-    print("🎬 Bilibili 视频处理自动化流程")
-    print("=" * 60)
-
-    check_ffmpeg_installed()
-
-    # 安装依赖流程移动至此
+def _ensure_dependencies():
+    """在导入任何依赖这些库的模块前，确保第三方依赖已安装。"""
     print("📦 检查并安装依赖...")
     for pkg in ['playwright', 'yutto']:
         try:
@@ -44,8 +38,23 @@ def main():
                 '--trusted-host', 'mirror.nju.edu.cn',
                 '--user'
             ], check=True)
+    # 安装 Playwright 浏览器内核
     os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
     subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+
+
+def main():
+    print("=" * 60)
+    print("🎬 Bilibili 视频处理自动化流程")
+    print("=" * 60)
+
+    check_ffmpeg_installed()
+    # 在导入使用第三方库的模块之前确保依赖已安装
+    _ensure_dependencies()
+
+    # 依赖已就绪后再导入会使用它们的模块
+    from download import run_download
+    from merge import merge_videos_with_best_hevc
 
     download_result = ask_execute("【📥 视频下载】", run_download)
 
