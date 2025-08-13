@@ -1,7 +1,7 @@
 import os
 import shutil
-from tempfile import TemporaryDirectory
-from typing import List, Tuple
+import json
+from typing import List, Dict
 
 from utils import (
     get_video_resolution,
@@ -9,7 +9,6 @@ from utils import (
     select_best_hevc_encoder,
     get_video_files,
     run_ffmpeg,
-    insert_gap,
     move_file,
     get_media_duration_seconds,
     ass_time_add,
@@ -94,15 +93,26 @@ def merge_ass_with_offsets(subtitle_entries: List[tuple], clip_durations: List[f
             in_events = False
             offset = cumulative_offset_for_index(clip_index)
             for line in lines:
+                # 首段：写入头部直到 [Events]，并从此开始处理事件
                 if not wrote_header:
-                    fout.write(line)
+                    if line.strip().lower() == "[events]":
+                        fout.write(line)
+                        wrote_header = True
+                        in_events = True
+                        continue
+                    else:
+                        fout.write(line)
+                        continue
+
+                # 后续段：跳过头部，遇到 [Events] 后开始处理事件
+                if not in_events:
                     if line.strip().lower() == "[events]":
                         in_events = True
                     continue
-                if not in_events:
-                    if line.strip().lower() == "[events]":
-                        fout.write(line)
-                        in_events = True
+
+                # 进入事件段：去重 Format 行，仅写入对齐后的 Dialogue 与其它事件行
+                lower = line.strip().lower()
+                if lower.startswith('format:'):
                     continue
                 if line.startswith("Dialogue:"):
                     parts = line.split(",", 9)
@@ -114,11 +124,57 @@ def merge_ass_with_offsets(subtitle_entries: List[tuple], clip_durations: List[f
                         fout.write(line)
                 else:
                     fout.write(line)
-            if not wrote_header:
-                wrote_header = True
 
 
-def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | None = None, start_time: float | None = None, end_time: float | None = None) -> bool:
+def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | None = None) -> bool:
+    # --- checkpoint helpers ---
+    def project_root() -> str:
+        return os.path.dirname(os.path.abspath(__file__))
+
+    def checkpoint_path() -> str:
+        return os.path.join(project_root(), '.merge_checkpoint.json')
+
+    def work_dir_path(base_dir: str) -> str:
+        # 在源目录下创建工作目录，避免跨盘复制，提升性能
+        return os.path.join(base_dir, '.merge_work')
+
+    def load_checkpoint() -> Dict | None:
+        try:
+            path = checkpoint_path()
+            if os.path.isfile(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return None
+
+    def save_checkpoint(state: Dict) -> None:
+        try:
+            with open(checkpoint_path(), 'w', encoding='utf-8') as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def clear_checkpoint_and_workdir(base_dir: str | None = None) -> None:
+        # 先删除断点文件
+        try:
+            if os.path.isfile(checkpoint_path()):
+                os.remove(checkpoint_path())
+        except Exception:
+            pass
+        # 尝试定位并删除工作目录
+        try:
+            wd: str | None = None
+            if base_dir:
+                wd = work_dir_path(base_dir)
+            else:
+                st = load_checkpoint()
+                if st:
+                    wd = st.get('work_dir')
+            if wd and os.path.isdir(wd):
+                shutil.rmtree(wd, ignore_errors=True)
+        except Exception:
+            pass
     def parse_selection(selection: str, upper_bound: int) -> List[int]:
         # 解析类似 "1,3,5-7" 的输入，返回去重且按出现顺序的索引（0-based）
         tokens = [t.strip() for t in selection.split(',') if t.strip()]
@@ -164,37 +220,30 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             marker = " [新增]" if is_new_file.get(f) else ""
             print(f"  {idx+1:2d}. {os.path.basename(f)}{marker}")
 
-        manual_selection_allowed = True
+        # 先询问是否只合并新增文件
         if files and len(files) != len(all_files):
             print(f"\n detected {len(files)} new file(s).")
             choice = input("是否只合并新增文件？(Y/n，输入'n'将合并所有文件): ").strip().lower()
-            if choice != 'n':
-                # 用户选择只合并新增文件：直接使用新增文件列表，并且不再询问手动选择
-                manual_selection_allowed = False
-                print(f"📝 将合并 {len(files)} 个新增文件")
-            else:
-                files = all_files
-                print("📝 将合并所有视频文件")
-        elif files:
-            print(f"📝 默认合并 {len(files)} 个文件")
+            default_files = files if choice != 'n' else all_files
         else:
-            print("📝 将合并所有找到的视频文件")
+            default_files = files if files else all_files
 
-        # 允许用户手动选择要合并的文件（仅当未选择“只合并新增”时）
-        if manual_selection_allowed:
-            manual_choice = input("是否手动选择要合并的文件？(y/N): ").strip().lower()
-            if manual_choice == 'y':
-                print("请输入要合并的序号（用逗号分隔，支持范围，如 1,3,5-7）。直接回车将使用上一步选择：")
-                selection = input("序号：").strip()
-                if selection:
-                    idxs = parse_selection(selection, upper_bound=len(display_files))
-                    if idxs:
-                        files = [display_files[i] for i in idxs]
-                        print("📝 将按以下顺序合并（手动选择）：")
-                        for f in files:
-                            print("   •", os.path.basename(f))
-                    else:
-                        print("⚠️ 未解析到有效序号，继续使用上一步选择。")
+        # 再询问是否手动选择
+        manual_choice = input("是否手动选择要合并的文件？(y/N): ").strip().lower()
+        if manual_choice == 'y':
+            print("请输入要合并的序号（用逗号分隔，支持范围，如 1,3,5-7）。直接回车将使用默认选择：")
+            selection = input("序号：").strip()
+            if selection:
+                idxs = parse_selection(selection, upper_bound=len(display_files))
+                if idxs:
+                    files = [display_files[i] for i in idxs]
+                else:
+                    print("⚠️ 未解析到有效序号，继续使用默认选择。")
+                    files = default_files
+            else:
+                files = default_files
+        else:
+            files = default_files
 
         print(f"\n🔎 本次将要合并的文件：")
         for f in files:
@@ -204,109 +253,156 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             print("❌ 未找到可合并的视频文件")
             return False
 
+        # 断点续传：若检查到上次记录，询问是否继续
+        state = load_checkpoint()
+        resuming = False
+        if state:
+            ans = input("检测到上次未完成的合并，是否从断点继续？(Y/n): ").strip().lower()
+            if ans != 'n':
+                resuming = True
+                files = state.get('source_files', files)
+                encoder = state.get('encoder', encoder)
+                print("🧷 已载入断点记录，将从上次进度继续。")
+            else:
+                clear_checkpoint_and_workdir()
+
         if encoder is None:
             encoder = choose_encoder()
         else:
             print(f"🧠 合并流程全程将使用指定编码器：{encoder}")
 
-        with TemporaryDirectory() as tmpdir:
-            print(f"📁 正在复制待合并文件到临时目录：{tmpdir}")
-            tmp_files: List[str] = []
-            for f in files:
-                dst = os.path.join(tmpdir, os.path.basename(f))
-                shutil.copy2(f, dst)
-                tmp_files.append(dst)
+        # 询问断点保存间隔（按处理片段数）
+        try:
+            save_interval = input("断点保存间隔（每处理多少个片段保存一次，默认1）：").strip()
+            save_interval_clips = int(save_interval) if save_interval else 1
+            if save_interval_clips <= 0:
+                save_interval_clips = 1
+        except Exception:
+            save_interval_clips = 1
 
-            concat_list: List[str] = []
-            subtitle_entries: List[tuple] = []
-            gap = os.path.join(tmpdir, 'gap.ts')
-            print("🎨 生成2秒无声黑屏（TS 容器）...")
-            gap_cmd = ['ffmpeg', '-y']
-            if encoder.endswith('_vaapi'):
-                gap_cmd += ['-vaapi_device', '/dev/dri/renderD128']
-            elif encoder.endswith('_qsv'):
-                gap_cmd += ['-hwaccel', 'qsv']
-            gap_cmd += [
-                '-f', 'lavfi', '-i', f"color=c=black:s=1920x1080:d=2:r={TRANSCODE_PARAMS['fps']}",
-                '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
-            ]
-            if encoder.endswith('_vaapi'):
-                gap_cmd += ['-vf', 'format=nv12,hwupload']
-            elif encoder.endswith('_qsv'):
-                gap_cmd += ['-vf', 'format=nv12,hwupload=extra_hw_frames=64']
-            gap_cmd += [
-                '-c:v', encoder,
-            ]
-            if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
-                gap_cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
-            gap_cmd += [
-                '-c:a', 'aac',
-                '-b:a', TRANSCODE_PARAMS['audio_bitrate'],
-                '-t', '2',
-                '-f', 'mpegts',
-                gap
-            ]
+        # 在源目录内直接工作，避免复制源文件
+        if download_dir is None:
+            # 若调用端未提供目录，则用所有文件的共同父目录
+            common_dir = os.path.dirname(files[0]) if files else project_root()
+        else:
+            common_dir = os.path.abspath(download_dir)
+        tmpdir = work_dir_path(common_dir)
+        os.makedirs(tmpdir, exist_ok=True)
+        print(f"📁 使用工作目录：{tmpdir}")
+        tmp_files: List[str] = list(files)
+        subtitle_entries: List[tuple] = []
+        gap = os.path.join(tmpdir, 'gap.ts')
+        print("🎨 生成2秒无声黑屏（TS 容器）...")
+        gap_cmd = ['ffmpeg', '-y']
+        if encoder.endswith('_vaapi'):
+            gap_cmd += ['-vaapi_device', '/dev/dri/renderD128']
+        elif encoder.endswith('_qsv'):
+            gap_cmd += ['-hwaccel', 'qsv']
+        gap_cmd += [
+            '-f', 'lavfi', '-i', f"color=c=black:s=1920x1080:d=2:r={TRANSCODE_PARAMS['fps']}",
+            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo',
+        ]
+        if encoder.endswith('_vaapi'):
+            gap_cmd += ['-vf', 'format=nv12,hwupload']
+        elif encoder.endswith('_qsv'):
+            gap_cmd += ['-vf', 'format=nv12,hwupload=extra_hw_frames=64']
+        gap_cmd += [
+            '-c:v', encoder,
+        ]
+        if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
+            gap_cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
+        gap_cmd += [
+            '-c:a', 'aac',
+            '-b:a', TRANSCODE_PARAMS['audio_bitrate'],
+            '-t', '2',
+            '-f', 'mpegts',
+            gap
+        ]
+        if not os.path.exists(gap):
             run_ffmpeg(gap_cmd)
 
-            clip_durations: List[float] = []
-            for i, f in enumerate(tmp_files):
-                print(f"\n🎞️  [{i+1}/{len(tmp_files)}] 转码视频：{os.path.basename(f)}")
-                print(f"    ➡️ 本视频实际使用编码器：{encoder}")
-                ts = os.path.join(tmpdir, f"clip_{i:03d}.ts")
+        clip_durations: List[float] = []
+        processed_indices: List[int] = []
+        ts_paths: Dict[int, str] = {}
+        if resuming and state:
+            processed_indices = state.get('processed_indices', [])
+            ts_paths = {int(k): v for k, v in state.get('ts_paths', {}).items()}
+            for i in processed_indices:
+                d = get_media_duration_seconds(ts_paths.get(i, ''))
+                if d > 0:
+                    clip_durations.append(d)
+        for i, f in enumerate(tmp_files):
+            print(f"\n🎞️  [{i+1}/{len(tmp_files)}] 转码视频：{os.path.basename(f)}")
+            print(f"    ➡️ 本视频实际使用编码器：{encoder}")
+            # 输出片段仍放在工作目录，避免污染源目录
+            ts = os.path.join(tmpdir, f"clip_{i:03d}.ts")
 
-                subtitle = find_subtitle(files[i])
-                if subtitle:
-                    subtitle_entries.append((subtitle, i))
+            subtitle = find_subtitle(files[i])
+            if subtitle:
+                subtitle_entries.append((subtitle, i))
 
-                res = get_video_resolution(f)
-                width, height = res if res else (1920, 1080)
-                vf_filters: List[str] = []
-                if width != 1920 or height != 1080:
-                    vf_filters.append("scale=1920:1080:force_original_aspect_ratio=decrease")
-                    vf_filters.append("pad=1920:1080:(ow-iw)/2:(oh-ih)/2")
-                vf_filters.append(f"fps={TRANSCODE_PARAMS['fps']}")
-                print(f"    ➡️ 视频滤镜: {','.join(vf_filters)}")
+            res = get_video_resolution(f)
+            width, height = res if res else (1920, 1080)
+            vf_filters: List[str] = []
+            if width != 1920 or height != 1080:
+                vf_filters.append("scale=1920:1080:force_original_aspect_ratio=decrease")
+                vf_filters.append("pad=1920:1080:(ow-iw)/2:(oh-ih)/2")
+            vf_filters.append(f"fps={TRANSCODE_PARAMS['fps']}")
+            print(f"    ➡️ 视频滤镜: {','.join(vf_filters)}")
 
-                cmd: List[str] = ['ffmpeg', '-y']
-                if encoder.endswith('_vaapi'):
-                    cmd += ['-vaapi_device', '/dev/dri/renderD128']
-                elif encoder.endswith('_qsv'):
-                    cmd += ['-hwaccel', 'qsv']
-                cmd += ['-i', f]
-                vf_chain = list(vf_filters)
-                if encoder.endswith('_vaapi'):
-                    vf_chain += ['format=nv12', 'hwupload']
-                elif encoder.endswith('_qsv'):
-                    vf_chain += ['format=nv12', 'hwupload=extra_hw_frames=64']
-                cmd += ['-vf', ','.join(vf_chain)]
-                cmd += [
-                    '-r', str(TRANSCODE_PARAMS['fps']),
-                    '-vsync', 'cfr',
-                ]
-                if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
-                    cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
-                cmd += [
-                    '-c:v', encoder,
-                    '-b:v', TRANSCODE_PARAMS['bitrate'],
-                    '-c:a', 'aac',
-                    '-b:a', TRANSCODE_PARAMS['audio_bitrate'],
-                    '-f', 'mpegts',
-                    ts
-                ]
-                run_ffmpeg(cmd)
-                concat_list.append(ts)
-                duration = get_media_duration_seconds(ts)
-                clip_durations.append(duration)
+            cmd: List[str] = ['ffmpeg', '-y']
+            if encoder.endswith('_vaapi'):
+                cmd += ['-vaapi_device', '/dev/dri/renderD128']
+            elif encoder.endswith('_qsv'):
+                cmd += ['-hwaccel', 'qsv']
+            cmd += ['-i', f]
+            vf_chain = list(vf_filters)
+            if encoder.endswith('_vaapi'):
+                vf_chain += ['format=nv12', 'hwupload']
+            elif encoder.endswith('_qsv'):
+                vf_chain += ['format=nv12', 'hwupload=extra_hw_frames=64']
+            cmd += ['-vf', ','.join(vf_chain)]
+            cmd += [
+                '-r', str(TRANSCODE_PARAMS['fps']),
+                '-vsync', 'cfr',
+            ]
+            if not (encoder.endswith('_vaapi') or encoder.endswith('_qsv')):
+                cmd += ['-pix_fmt', TRANSCODE_PARAMS['pix_fmt']]
+            cmd += [
+                '-c:v', encoder,
+                '-b:v', TRANSCODE_PARAMS['bitrate'],
+                '-c:a', 'aac',
+                '-b:a', TRANSCODE_PARAMS['audio_bitrate'],
+                '-f', 'mpegts',
+                ts
+            ]
+            run_ffmpeg(cmd)
+            duration = get_media_duration_seconds(ts)
+            clip_durations.append(duration)
+            processed_indices.append(i)
+            ts_paths[i] = ts
 
-                if i < len(tmp_files) - 1:
-                    insert_gap(concat_list, tmpdir, gap, i)
+            if len(processed_indices) % save_interval_clips == 0:
+                save_checkpoint({
+                    'encoder': encoder,
+                    'source_files': files,
+                    'work_dir': tmpdir,
+                    'gap': gap,
+                    'processed_indices': processed_indices,
+                    'ts_paths': {str(k): v for k, v in ts_paths.items()},
+                })
+
+                # 间隔在最终合并列表阶段以 gap.ts 形式插入
 
             output = os.path.abspath("output_final_merged.mp4")
             concat_file = os.path.join(tmpdir, "concat_list.txt")
             print("📄 生成合并列表文件...")
             with open(concat_file, "w", encoding="utf-8") as f:
-                for ts in concat_list:
-                    f.write(f"file '{os.path.abspath(ts)}'\n")
+                for i in range(len(files)):
+                    ts_abs = os.path.abspath(ts_paths.get(i, os.path.join(tmpdir, f"clip_{i:03d}.ts")))
+                    f.write(f"file '{ts_abs}'\n")
+                    if i < len(files) - 1:
+                        f.write(f"file '{os.path.abspath(gap)}'\n")
 
             print("🔗 开始合并所有片段...")
             try:
@@ -346,6 +442,7 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
                 ]
                 run_ffmpeg(reenc_cmd)
             print(f"\n✅ 合并完成：{output}")
+            clear_checkpoint_and_workdir(common_dir)
 
             merged_subtitle = None
             if subtitle_entries:

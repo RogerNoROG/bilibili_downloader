@@ -117,6 +117,18 @@ def generate_download_sh(bv_list: List[str], save_path: str, sessdata: str) -> s
     return sh
 
 
+def _run_yutto_batch(bv_list: List[str], save_path: str, sessdata: str) -> None:
+    """使用项目虚拟环境中的 Python 逐个调用 yutto 下载。"""
+    py = _resolve_venv_python()
+    for bv in bv_list:
+        print(f"⏬ 开始下载 {bv} ...")
+        cmd = [py, '-m', 'yutto']
+        if sessdata:
+            cmd += ['-c', sessdata]
+        cmd += ['-d', save_path, bv]
+        subprocess.run(cmd, shell=False, check=False)
+
+
 def run_download() -> Tuple[str, float, float]:
     save_path = get_save_path()
     sessdata = get_sessdata()

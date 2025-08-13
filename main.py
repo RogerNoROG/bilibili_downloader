@@ -1,11 +1,9 @@
-import time
 from typing import Optional
 
 import os
 import sys
 import subprocess
 import shutil
-import platform
 
 # 注意：此文件在安装第三方依赖前不导入任何第三方模块或依赖这些模块的本地文件
 from utils import check_ffmpeg_installed
@@ -146,11 +144,9 @@ def main():
     download_result = ask_execute("【📥 视频下载】", run_download)
 
     download_dir = "./download"
-    start_time = time.time()
-    end_time = time.time()
 
     if download_result:
-        download_dir, start_time, end_time = download_result
+        download_dir, _, _ = download_result
         print("✅ 下载流程已完成，继续执行后续操作...")
     else:
         print("⚠️ 下载流程被跳过或失败，继续执行后续操作...")
@@ -158,7 +154,7 @@ def main():
     merge_done = ask_execute(
         "【🎥 视频合并】",
         merge_videos_with_best_hevc,
-        download_dir, None, start_time, end_time
+        download_dir, None
     )
 
     print("\n" + "=" * 60)
