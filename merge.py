@@ -221,24 +221,44 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             print(f"  {idx+1:2d}. {os.path.basename(f)}{marker}")
 
         # 先询问是否只合并新增文件
+        just_new_only = False
         if files and len(files) != len(all_files):
             print(f"\n detected {len(files)} new file(s).")
             choice = input("是否只合并新增文件？(Y/n，输入'n'将合并所有文件): ").strip().lower()
-            default_files = files if choice != 'n' else all_files
+            if choice != 'n':
+                default_files = files
+                just_new_only = True
+            else:
+                default_files = all_files
         else:
             default_files = files if files else all_files
 
-        # 再询问是否手动选择
-        manual_choice = input("是否手动选择要合并的文件？(y/N): ").strip().lower()
-        if manual_choice == 'y':
-            print("请输入要合并的序号（用逗号分隔，支持范围，如 1,3,5-7）。直接回车将使用默认选择：")
-            selection = input("序号：").strip()
-            if selection:
-                idxs = parse_selection(selection, upper_bound=len(display_files))
-                if idxs:
-                    files = [display_files[i] for i in idxs]
+        # 若已选择“只合并新增文件”，则不再进行手动选择
+        if not just_new_only:
+            manual_choice = input("是否手动选择要合并的文件？(y/N): ").strip().lower()
+            if manual_choice == 'y':
+                print("请输入要合并的序号（用逗号分隔，支持范围，如 1,3,5-7）。")
+                print("直接回车确认当前选择；继续输入可追加选择：")
+                selected_indices: List[int] = []
+                while True:
+                    selection = input("序号（回车确认）：").strip()
+                    if not selection:
+                        break
+                    idxs = parse_selection(selection, upper_bound=len(display_files))
+                    if not idxs:
+                        print("⚠️ 未解析到有效序号，请重新输入或直接回车确认。")
+                        continue
+                    for i in idxs:
+                        if i not in selected_indices:
+                            selected_indices.append(i)
+                    # 显示当前选择摘要
+                    if selected_indices:
+                        print("📝 当前已选择：")
+                        for i in selected_indices:
+                            print(f"   • {os.path.basename(display_files[i])}")
+                if selected_indices:
+                    files = [display_files[i] for i in selected_indices]
                 else:
-                    print("⚠️ 未解析到有效序号，继续使用默认选择。")
                     files = default_files
             else:
                 files = default_files
@@ -273,12 +293,12 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
 
         # 询问断点保存间隔（按处理片段数）
         try:
-            save_interval = input("断点保存间隔（每处理多少个片段保存一次，默认1）：").strip()
-            save_interval_clips = int(save_interval) if save_interval else 1
+            save_interval = input("断点保存间隔（每处理多少个片段保存一次，默认10）：").strip()
+            save_interval_clips = int(save_interval) if save_interval else 10
             if save_interval_clips <= 0:
-                save_interval_clips = 1
+                save_interval_clips = 10
         except Exception:
-            save_interval_clips = 1
+            save_interval_clips = 10
 
         # 在源目录内直接工作，避免复制源文件
         if download_dir is None:
@@ -394,6 +414,19 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
 
                 # 间隔在最终合并列表阶段以 gap.ts 形式插入
 
+            # 仅在处理到最后一个片段时再进行合并与收尾
+            if i < len(tmp_files) - 1:
+                continue
+            # 如果最后一次迭代没有达到保存间隔，仍然进行一次断点保存，确保可续传
+            if len(processed_indices) % save_interval_clips != 0:
+                save_checkpoint({
+                    'encoder': encoder,
+                    'source_files': files,
+                    'work_dir': tmpdir,
+                    'gap': gap,
+                    'processed_indices': processed_indices,
+                    'ts_paths': {str(k): v for k, v in ts_paths.items()},
+                })
             output = os.path.abspath("output_final_merged.mp4")
             concat_file = os.path.join(tmpdir, "concat_list.txt")
             print("📄 生成合并列表文件...")
