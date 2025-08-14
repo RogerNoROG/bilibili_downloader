@@ -1,12 +1,26 @@
 from typing import Optional
-
 import os
 import sys
 import subprocess
 import shutil
 
 # 注意：此文件在安装第三方依赖前不导入任何第三方模块或依赖这些模块的本地文件
-from utils import check_ffmpeg_installed
+
+def _install(package):
+    try:
+        __import__(package)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+for pkg in ["moviepy", "pillow", "playwright", "yutto"]:
+    _install(pkg)
+
+# playwright 需要安装浏览器内核
+try:
+    import playwright
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+except Exception:
+    pass
 
 
 def ask_execute(task_name: str, task_function, *args, **kwargs):
@@ -23,11 +37,10 @@ def ask_execute(task_name: str, task_function, *args, **kwargs):
         print(f"❌ {task_name} 执行失败: {e}")
         return None
 
-
 def _ensure_dependencies():
     """在导入任何依赖这些库的模块前，确保第三方依赖已安装。"""
     print("📦 检查并安装依赖...")
-    
+
     # Linux: 检测并安装系统依赖，使用虚拟环境安装Python包
     if sys.platform.startswith('linux'):
         def _has_cmd(cmd: str) -> bool:
@@ -35,11 +48,9 @@ def _ensure_dependencies():
 
         # 检测系统依赖
         missing_system_deps = []
-        if not _has_cmd('ffmpeg'):
-            missing_system_deps.append('ffmpeg')
         if not _has_cmd('pip') and not _has_cmd('pip3'):
             missing_system_deps.append('python3-pip')
-        
+
         # 如果缺少系统依赖，尝试通过apt安装
         if missing_system_deps:
             if _has_cmd('apt') or _has_cmd('apt-get'):
@@ -71,11 +82,11 @@ def _ensure_dependencies():
         venv_dir = os.path.join(project_root, '.venv')
         venv_python = os.path.join(venv_dir, 'bin', 'python')
         venv_pip = os.path.join(venv_dir, 'bin', 'pip')
-        
+
         if not os.path.exists(venv_python):
             print("🐍 正在创建虚拟环境 .venv ...")
             subprocess.run(['python3', '-m', 'venv', venv_dir], check=True)
-        
+
         # 配置pip使用南京大学镜像源
         print("📦 配置pip使用南京大学镜像源...")
         pip_config_dir = os.path.join(venv_dir, 'pip.conf')
@@ -85,15 +96,15 @@ trusted-host = mirror.nju.edu.cn
 """
         with open(pip_config_dir, 'w', encoding='utf-8') as f:
             f.write(pip_config_content)
-        
+
         # 设置环境变量确保pip使用配置
         os.environ['PIP_CONFIG_FILE'] = pip_config_dir
-        
+
         # 升级 pip 并安装包
         print("📦 在虚拟环境中安装 Python 依赖...")
         # 静默升级 pip，减少无关输出
         subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip', '-q'], check=True)
-        
+
         # 检查requirements.txt是否存在
         requirements_file = os.path.join(project_root, 'requirements.txt')
         if os.path.exists(requirements_file):
@@ -102,7 +113,7 @@ trusted-host = mirror.nju.edu.cn
         else:
             print("📦 安装默认依赖（playwright、yutto）...")
             subprocess.run([venv_pip, 'install', 'playwright', 'yutto', '-q'], check=True)
-        
+
         # 安装 Playwright 浏览器内核
         os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
         subprocess.run([venv_python, '-m', 'playwright', 'install', 'chromium'], check=False)
@@ -116,7 +127,8 @@ trusted-host = mirror.nju.edu.cn
 
     else:
         # Windows/macOS: 沿用当前 Python 安装依赖
-        for pkg in ['playwright', 'yutto']:
+        required_packages = ['playwright', 'yutto', 'moviepy', 'pillow']
+        for pkg in required_packages:
             try:
                 __import__(pkg)
             except ImportError:
@@ -127,7 +139,6 @@ trusted-host = mirror.nju.edu.cn
         os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
         subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
 
-
 def main():
     print("=" * 60)
     print("🎬 Bilibili 视频处理自动化流程")
@@ -135,6 +146,7 @@ def main():
 
     _ensure_dependencies()
     # 依赖补全后再检查 ffmpeg 是否可用
+    from utils import check_ffmpeg_installed
     check_ffmpeg_installed()
 
     # 依赖已就绪后再导入会使用它们的模块
@@ -165,7 +177,6 @@ def main():
     print(f"• 视频合并: {'✅ 已执行' if merge_done else '⚠️ 跳过'}")
     print("\n🎉 处理完成！")
     input("\n👉 请按任意键退出...")
-
 
 if __name__ == "__main__":
     try:

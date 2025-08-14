@@ -5,6 +5,7 @@ import platform
 import shutil
 import subprocess
 from typing import List, Tuple
+from moviepy import VideoFileClip
 
 
 def _local_tool_candidates(tool: str) -> list[str]:
@@ -76,44 +77,25 @@ def check_ffmpeg_installed() -> None:
 
 
 def get_media_duration_seconds(path: str) -> float:
-    """使用 ffprobe 获取媒体时长（秒）。失败返回 0.0。"""
+    """使用 moviepy 获取媒体时长（秒）。失败返回 0.0。"""
     try:
-        ffprobe = get_ffprobe_path() or 'ffprobe'
-        probe = subprocess.run(
-            [ffprobe, '-v', 'error', '-show_entries', 'format=duration',
-             '-of', 'default=noprint_wrappers=1:nokey=1', path],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8', errors='ignore', check=True
-        )
-        return float(probe.stdout.strip())
+        clip = VideoFileClip(path)
+        duration = clip.duration
+        clip.close()
+        return duration
     except Exception:
         return 0.0
 
 
 def get_video_resolution(video_path: str):
-    cmd = [
-        'ffprobe', '-v', 'quiet', '-print_format', 'json',
-        '-show_streams', '-select_streams', 'v:0', video_path
-    ]
+    """使用 moviepy 获取视频分辨率 (width, height)。失败返回 None。"""
     try:
-        ffprobe = get_ffprobe_path() or 'ffprobe'
-        cmd = [ffprobe if (len(cmd) > 0 and cmd[0] == 'ffprobe') else cmd[0]] + cmd[1:]
-        result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            text=True, encoding='utf-8', errors='ignore', timeout=10
-        )
-        if result.returncode != 0:
-            return None
-        data = json.loads(result.stdout)
-        for stream in data.get('streams', []):
-            if stream['codec_type'] == 'video':
-                width = stream.get('width')
-                height = stream.get('height')
-                if width and height:
-                    return (width, height)
+        clip = VideoFileClip(video_path)
+        res = (clip.w, clip.h)
+        clip.close()
+        return res
     except Exception:
-        pass
-    return None
+        return None
 
 
 def detect_available_encoders() -> List[Tuple[str, str]]:
@@ -160,15 +142,12 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
         return [('libx264', 'CPU H.264'), ('libx265', 'CPU H.265')]
 
     available: List[Tuple[str, str]] = []
-    print("🛠️  正在测试编码器可用性...")
+    # 过程性说明隐藏，仅内部测试
     vaapi_dev = get_vaapi_device_path() if platform.system().lower().startswith('linux') else None
-    if vaapi_dev:
-        print(f"   🔧 检测到 VAAPI 设备: {vaapi_dev}")
-    elif platform.system().lower().startswith('linux'):
-        print("   ⚠️ 未检测到 VAAPI 设备节点（/dev/dri/renderD*）")
+    # 不输出 VAAPI 设备提示
     for enc, desc in candidates.items():
         if enc not in ffmpeg_encoders:
-            print(f"   ⏩ 跳过: {enc}（ffmpeg 不支持）")
+            # 静默跳过
             continue
         try:
             ffmpeg = get_ffmpeg_path() or 'ffmpeg'
@@ -205,23 +184,19 @@ def detect_available_encoders() -> List[Tuple[str, str]]:
                     ffmpeg, '-y', '-f', 'lavfi', '-i', 'testsrc=duration=1:size=1280x720:rate=30',
                     '-c:v', enc, '-t', '1', '-f', 'null', '-'
                 ]
-            print(f"   🧪 测试 {enc}: {' '.join(test_cmd)}")
+            # 静默测试命令
             result = subprocess.run(
                 test_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 text=True, encoding='utf-8', errors='ignore', timeout=8
             )
             if result.returncode == 0:
-                print(f"   ✅ 可用: {enc} - {desc}")
                 available.append((enc, desc))
             else:
                 err = (result.stderr or "").strip()
-                if err:
-                    err_summary = err[-500:]
-                    print(f"   ❌ 不可用: {enc} - {desc}（错误摘要）:\n      {err_summary}")
-                else:
-                    print(f"   ❌ 不可用: {enc} - {desc}")
+                # 静默不可用原因
         except Exception as e:
-            print(f"   ❌ 不可用: {enc} - {desc}（异常: {e}）")
+            # 静默异常
+            pass
 
     if not available:
         print("⚠️ 未检测到可用硬件编码器，仅可用 CPU 编码器。")
@@ -275,6 +250,7 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
                 is_root = False
             if not is_root and shutil.which('sudo'):
                 cmd = ['sudo', '-E'] + cmd
+
         result = subprocess.run(
             cmd,
             stdout=subprocess.PIPE,
@@ -282,6 +258,7 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
             text=False,
             timeout=timeout_seconds,
         )
+
         # 如以 sudo 执行，尽量将输出文件归还给当前用户，避免后续操作权限问题
         try:
             if sys.platform.startswith('linux') and shutil.which('sudo'):
@@ -300,6 +277,7 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
+
         if result.returncode != 0:
             stderr_text = (result.stderr or b'').decode('utf-8', errors='ignore')
             print(f"❌ FFmpeg命令执行失败: {' '.join(cmd)}")
