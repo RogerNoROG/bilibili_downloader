@@ -114,7 +114,7 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
                     # 有图形界面，安装完整依赖
                     subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'playwright', 'yutto', '-q'], check=True)
                 else:
-                    # 无图形界面，不安装 playwright
+                    # 无图形界面，不安装 playwright，但需要安装 pillow 和其他依赖
                     print("🖥️ 无图形界面环境，跳过 playwright 安装")
                     subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'yutto', '-q'], check=True)
 
