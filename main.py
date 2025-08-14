@@ -6,22 +6,6 @@ import shutil
 
 # 注意：此文件在安装第三方依赖前不导入任何第三方模块或依赖这些模块的本地文件
 
-def _install(package):
-    try:
-        __import__(package)
-    except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-
-for pkg in ["moviepy", "pillow", "playwright", "yutto"]:
-    _install(pkg)
-
-# playwright 需要安装浏览器内核
-try:
-    import playwright
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
-except Exception:
-    pass
-
 
 def ask_execute(task_name: str, task_function, *args, **kwargs):
     resp = input(f"是否执行 {task_name}？(Y/n): ").strip().lower()
@@ -48,8 +32,12 @@ def _ensure_dependencies():
 
         # 检测系统依赖
         missing_system_deps = []
-        if not _has_cmd('pip') and not _has_cmd('pip3'):
-            missing_system_deps.append('python3-pip')
+        if not _has_cmd('python3'):
+            missing_system_deps.append('python3')
+        if not _has_cmd('python3-venv'):
+            missing_system_deps.append('python3-venv')
+        if not _has_cmd('ffmpeg'):
+            missing_system_deps.append('ffmpeg')
 
         # 如果缺少系统依赖，尝试通过apt安装
         if missing_system_deps:
@@ -68,6 +56,8 @@ def _ensure_dependencies():
                     print("请手动安装以下依赖：")
                     for dep in missing_system_deps:
                         print(f"  - {dep}")
+                    print("\n或者运行以下命令：")
+                    print(f"sudo {apt_cmd} update && sudo {apt_cmd} install -y {' '.join(missing_system_deps)}")
                     sys.exit(1)
             else:
                 print("❌ 未检测到 apt 包管理器，请手动安装以下依赖：")
@@ -85,38 +75,52 @@ def _ensure_dependencies():
 
         if not os.path.exists(venv_python):
             print("🐍 正在创建虚拟环境 .venv ...")
-            subprocess.run(['python3', '-m', 'venv', venv_dir], check=True)
+            try:
+                subprocess.run(['python3', '-m', 'venv', venv_dir], check=True)
+                print("✅ 虚拟环境创建成功")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ 虚拟环境创建失败: {e}")
+                print("请确保已安装 python3-venv:")
+                print("sudo apt update && sudo apt install -y python3-venv")
+                sys.exit(1)
 
-        # 配置pip使用南京大学镜像源
-        print("📦 配置pip使用南京大学镜像源...")
+        # 配置pip使用国内镜像源
+        print("📦 配置pip使用国内镜像源...")
         pip_config_dir = os.path.join(venv_dir, 'pip.conf')
         pip_config_content = """[global]
-index-url = https://mirror.nju.edu.cn/pypi/web/simple/
-trusted-host = mirror.nju.edu.cn
+index-url = https://pypi.tuna.tsinghua.edu.cn/simple/
+trusted-host = pypi.tuna.tsinghua.edu.cn
 """
         with open(pip_config_dir, 'w', encoding='utf-8') as f:
             f.write(pip_config_content)
 
-        # 设置环境变量确保pip使用配置
-        os.environ['PIP_CONFIG_FILE'] = pip_config_dir
-
         # 升级 pip 并安装包
         print("📦 在虚拟环境中安装 Python 依赖...")
-        # 静默升级 pip，减少无关输出
-        subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip', '-q'], check=True)
+        try:
+            # 静默升级 pip，减少无关输出
+            subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip', '-q'], check=True)
 
-        # 检查requirements.txt是否存在
-        requirements_file = os.path.join(project_root, 'requirements.txt')
-        if os.path.exists(requirements_file):
-            print("📦 从 requirements.txt 安装依赖...")
-            subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
-        else:
-            print("📦 安装默认依赖（playwright、yutto）...")
-            subprocess.run([venv_pip, 'install', 'playwright', 'yutto', '-q'], check=True)
+            # 检查requirements.txt是否存在
+            requirements_file = os.path.join(project_root, 'requirements.txt')
+            if os.path.exists(requirements_file):
+                print("📦 从 requirements.txt 安装依赖...")
+                subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
+            else:
+                print("📦 安装默认依赖...")
+                subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'playwright', 'yutto', '-q'], check=True)
 
-        # 安装 Playwright 浏览器内核
-        os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
-        subprocess.run([venv_python, '-m', 'playwright', 'install', 'chromium'], check=False)
+            # 安装 Playwright 浏览器内核
+            print("🌐 安装 Playwright 浏览器内核...")
+            os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
+            subprocess.run([venv_python, '-m', 'playwright', 'install', 'chromium'], check=False)
+            
+        except subprocess.CalledProcessError as e:
+            print(f"❌ 依赖安装失败: {e}")
+            print("请检查网络连接或手动安装依赖:")
+            print(f"cd {project_root}")
+            print(f"source .venv/bin/activate")
+            print("pip install -r requirements.txt")
+            sys.exit(1)
 
         # 若当前不是 venv 解释器，则切换到 venv 并重启自身
         if os.path.realpath(sys.executable) != os.path.realpath(venv_python) and os.environ.get('BILI_VENV_ACTIVATED') != '1':
@@ -133,9 +137,15 @@ trusted-host = mirror.nju.edu.cn
                 __import__(pkg)
             except ImportError:
                 print(f"🔧 正在安装：{pkg}")
-                subprocess.run([
-                    sys.executable, '-m', 'pip', 'install', pkg,
-                ], check=True)
+                try:
+                    subprocess.run([
+                        sys.executable, '-m', 'pip', 'install', pkg,
+                    ], check=True)
+                except subprocess.CalledProcessError as e:
+                    print(f"❌ 安装 {pkg} 失败: {e}")
+                    print("请手动安装依赖:")
+                    print(f"pip install {pkg}")
+                    sys.exit(1)
         os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
         subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
 
