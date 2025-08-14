@@ -100,6 +100,9 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
             # 静默升级 pip，减少无关输出
             subprocess.run([venv_python, '-m', 'pip', 'install', '--upgrade', 'pip', '-q'], check=True)
 
+            # 检查是否有图形界面环境
+            has_display = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+            
             # 检查requirements.txt是否存在
             requirements_file = os.path.join(project_root, 'requirements.txt')
             if os.path.exists(requirements_file):
@@ -107,12 +110,36 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
                 subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
             else:
                 print("📦 安装默认依赖...")
-                subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'playwright', 'yutto', '-q'], check=True)
+                if has_display:
+                    # 有图形界面，安装完整依赖
+                    subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'playwright', 'yutto', '-q'], check=True)
+                else:
+                    # 无图形界面，不安装 playwright
+                    print("🖥️ 无图形界面环境，跳过 playwright 安装")
+                    subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'yutto', '-q'], check=True)
 
-            # 安装 Playwright 浏览器内核
-            print("🌐 安装 Playwright 浏览器内核...")
-            os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
-            subprocess.run([venv_python, '-m', 'playwright', 'install', 'chromium'], check=False)
+            # 检查是否有图形界面环境
+            has_display = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+            if has_display:
+                # 有图形界面，安装 Playwright 浏览器内核
+                print("🌐 检测到图形界面，安装 Playwright 浏览器内核...")
+                os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
+                
+                # 先安装 Playwright 系统依赖
+                try:
+                    print("🔧 安装 Playwright 系统依赖...")
+                    subprocess.run([venv_python, '-m', 'playwright', 'install-deps'], check=False)
+                except Exception as e:
+                    print(f"⚠️ Playwright 系统依赖安装失败: {e}")
+                    print("请手动安装系统依赖:")
+                    print("sudo apt install -y libnspr4 libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libcairo2 libasound2")
+                
+                # 安装 Chromium 浏览器
+                subprocess.run([venv_python, '-m', 'playwright', 'install', 'chromium'], check=False)
+            else:
+                # 无图形界面，跳过 Playwright 安装
+                print("🖥️ 未检测到图形界面，跳过 Playwright 安装")
+                print("💡 在无图形界面的服务器环境中，将使用手动输入 SESSDATA 的方式")
             
         except subprocess.CalledProcessError as e:
             print(f"❌ 依赖安装失败: {e}")
@@ -127,6 +154,8 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
             print("🔁 切换到虚拟环境解释器重新启动程序...")
             env2 = os.environ.copy()
             env2['BILI_VENV_ACTIVATED'] = '1'
+            env2['VIRTUAL_ENV'] = venv_dir
+            env2['PATH'] = os.path.join(venv_dir, 'bin') + os.pathsep + env2.get('PATH', '')
             os.execvpe(venv_python, [venv_python] + sys.argv, env2)
 
     else:

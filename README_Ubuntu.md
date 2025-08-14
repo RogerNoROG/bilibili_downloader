@@ -54,10 +54,16 @@ error: externally-managed-environment
 程序在 Linux 系统上会自动：
 
 1. **检测系统依赖**：检查 `python3`、`python3-venv`、`ffmpeg` 是否已安装
-2. **创建虚拟环境**：在项目目录下创建 `.venv` 虚拟环境
-3. **配置镜像源**：使用清华大学镜像源加速下载
-4. **安装 Python 包**：在虚拟环境中安装所需依赖
-5. **重启程序**：切换到虚拟环境解释器重新运行
+2. **检测图形界面**：根据 `DISPLAY` 或 `WAYLAND_DISPLAY` 环境变量判断
+3. **创建虚拟环境**：在项目目录下创建 `.venv` 虚拟环境
+4. **配置镜像源**：使用清华大学镜像源加速下载
+5. **安装 Python 包**：在虚拟环境中安装所需依赖（无图形界面时跳过 playwright）
+6. **重启程序**：切换到虚拟环境解释器重新运行
+
+### 图形界面 vs 无图形界面
+
+- **有图形界面**：自动安装 Playwright，支持浏览器自动获取登录凭据
+- **无图形界面**：跳过 Playwright 安装，使用手动输入 SESSDATA 的方式
 
 ## 常见问题
 
@@ -82,6 +88,29 @@ A: 安装 FFmpeg：
 ```bash
 sudo apt install -y ffmpeg
 ```
+
+### Q: 无图形界面环境下如何获取 SESSDATA？
+A: 在无图形界面的服务器环境中，程序会提示手动输入 SESSDATA：
+
+1. **在本地电脑上获取 SESSDATA**：
+   - 在浏览器中登录 Bilibili
+   - 按 F12 打开开发者工具
+   - 切换到 Application/Storage 标签
+   - 在 Cookies 中找到 SESSDATA 的值
+   - 复制该值
+
+2. **在服务器上输入**：
+   - 运行程序时会提示输入 SESSDATA
+   - 粘贴从浏览器获取的值
+   - 程序会自动保存到 `SESSDATA.txt` 文件中
+
+### Q: 如何判断当前环境是否有图形界面？
+A: 检查环境变量：
+```bash
+echo $DISPLAY
+echo $WAYLAND_DISPLAY
+```
+如果都为空，则为无图形界面环境。
 
 ## 目录结构
 

@@ -53,30 +53,62 @@ def get_sessdata() -> str:
         if len(sess) > 10 and input("使用缓存凭据？(Y/n): ").lower() in ("", "y"):
             return sess
 
-    # 延迟导入，确保依赖已安装且当前解释器已切换到虚拟环境
-    from playwright.sync_api import sync_playwright
+    # 检查是否有图形界面环境
+    has_display = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
+    
+    if has_display:
+        # 有图形界面，使用 Playwright 自动获取
+        try:
+            # 延迟导入，确保依赖已安装且当前解释器已切换到虚拟环境
+            from playwright.sync_api import sync_playwright
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        page = context.new_page()
-        page.goto("https://www.bilibili.com", wait_until="networkidle")
-        sessdata = None
-        for _ in range(60):
-            for c in context.cookies():
-                if c['name'] == 'SESSDATA':
-                    sessdata = c['value']
-                    break
-            if sessdata:
-                break
-            time.sleep(2)
-        browser.close()
-        if not sessdata:
-            sys.exit("❌ 未能获取登录凭据")
-        with open(cache, 'w', encoding='utf-8') as f:
-            f.write(sessdata)
-        print("✅ 成功获取登录凭据")
-        return sessdata
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=False)
+                context = browser.new_context()
+                page = context.new_page()
+                page.goto("https://www.bilibili.com", wait_until="networkidle")
+                sessdata = None
+                for _ in range(60):
+                    for c in context.cookies():
+                        if c['name'] == 'SESSDATA':
+                            sessdata = c['value']
+                            break
+                    if sessdata:
+                        break
+                    time.sleep(2)
+                browser.close()
+                if not sessdata:
+                    sys.exit("❌ 未能获取登录凭据")
+                with open(cache, 'w', encoding='utf-8') as f:
+                    f.write(sessdata)
+                print("✅ 成功获取登录凭据")
+                return sessdata
+        except ImportError:
+            print("⚠️ Playwright 未安装，切换到手动输入模式")
+        except Exception as e:
+            print(f"⚠️ Playwright 获取凭据失败: {e}")
+            print("切换到手动输入模式")
+    
+    # 无图形界面或 Playwright 失败，使用手动输入
+    print("📝 请手动输入 SESSDATA（从浏览器开发者工具中获取）")
+    print("💡 获取方法：")
+    print("   1. 在浏览器中登录 Bilibili")
+    print("   2. 按 F12 打开开发者工具")
+    print("   3. 切换到 Application/Storage 标签")
+    print("   4. 在 Cookies 中找到 SESSDATA 的值")
+    print("   5. 复制该值并粘贴到下方")
+    print()
+    
+    while True:
+        sessdata = input("请输入 SESSDATA: ").strip()
+        if len(sessdata) > 10:
+            # 保存到缓存文件
+            with open(cache, 'w', encoding='utf-8') as f:
+                f.write(sessdata)
+            print("✅ SESSDATA 已保存")
+            return sessdata
+        else:
+            print("❌ SESSDATA 格式不正确，请重新输入")
 
 
 def extract_bv(text: str) -> List[str]:

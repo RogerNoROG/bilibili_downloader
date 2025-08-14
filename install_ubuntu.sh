@@ -34,6 +34,26 @@ sudo apt install -y \
     curl \
     wget
 
+# 检查是否有图形界面环境
+if [ -n "$DISPLAY" ] || [ -n "$WAYLAND_DISPLAY" ]; then
+    echo "🖥️ 检测到图形界面，安装 Playwright 依赖..."
+    sudo apt install -y \
+        libnspr4 \
+        libnss3 \
+        libatk-bridge2.0-0 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libgbm1 \
+        libpango-1.0-0 \
+        libcairo2 \
+        libasound2
+else
+    echo "🖥️ 未检测到图形界面，跳过 Playwright 依赖安装"
+fi
+
 echo "✅ 系统依赖安装完成"
 
 # 检查 Python 版本
