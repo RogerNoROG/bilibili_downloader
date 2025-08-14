@@ -107,7 +107,14 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
             requirements_file = os.path.join(project_root, 'requirements.txt')
             if os.path.exists(requirements_file):
                 print("📦 从 requirements.txt 安装依赖...")
-                subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
+                if has_display:
+                    # 有图形界面，安装所有依赖
+                    subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
+                else:
+                    # 无图形界面，跳过playwright安装
+                    print("🖥️ 无图形界面环境，跳过 playwright 安装")
+                    # 逐个安装除playwright外的依赖
+                    subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'yutto', '-q'], check=True)
             else:
                 print("📦 安装默认依赖...")
                 if has_display:
