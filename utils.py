@@ -5,7 +5,6 @@ import platform
 import shutil
 import subprocess
 from typing import List, Tuple
-from moviepy import VideoFileClip
 
 
 def _local_tool_candidates(tool: str) -> list[str]:
@@ -79,6 +78,7 @@ def check_ffmpeg_installed() -> None:
 def get_media_duration_seconds(path: str) -> float:
     """使用 moviepy 获取媒体时长（秒）。失败返回 0.0。"""
     try:
+        from moviepy import VideoFileClip
         clip = VideoFileClip(path)
         duration = clip.duration
         clip.close()
@@ -90,6 +90,7 @@ def get_media_duration_seconds(path: str) -> float:
 def get_video_resolution(video_path: str):
     """使用 moviepy 获取视频分辨率 (width, height)。失败返回 None。"""
     try:
+        from moviepy import VideoFileClip
         clip = VideoFileClip(video_path)
         res = (clip.w, clip.h)
         clip.close()

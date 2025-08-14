@@ -184,13 +184,24 @@ def main():
     print("=" * 60)
 
     _ensure_dependencies()
-    # 依赖补全后再检查 ffmpeg 是否可用
-    from utils import check_ffmpeg_installed
-    check_ffmpeg_installed()
+    
+    # 依赖补全后再导入会使用它们的模块
+    try:
+        from utils import check_ffmpeg_installed
+        check_ffmpeg_installed()
+    except ImportError as e:
+        print(f"❌ 导入 utils 模块失败: {e}")
+        print("请检查依赖是否正确安装")
+        sys.exit(1)
 
     # 依赖已就绪后再导入会使用它们的模块
-    from download import run_download
-    from merge import merge_videos_with_best_hevc
+    try:
+        from download import run_download
+        from merge import merge_videos_with_best_hevc
+    except ImportError as e:
+        print(f"❌ 导入模块失败: {e}")
+        print("请检查依赖是否正确安装")
+        sys.exit(1)
 
     download_result = ask_execute("【📥 视频下载】", run_download)
 

@@ -11,7 +11,7 @@ from utils import (
     get_last_download_files,
 )
 
-from moviepy import AudioClip
+# moviepy 将在需要时延迟导入
 
 
 def choose_encoder() -> str:
@@ -168,17 +168,16 @@ from PIL import Image, ImageDraw, ImageFont
 import subprocess
 
 # Check if moviepy is available
-try:
-    from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
-    MOVIEPY_AVAILABLE = True
-except ImportError:
-    MOVIEPY_AVAILABLE = False
-    print("警告：未安装 moviepy 库，部分功能可能无法使用。")
-    print("请运行 'pip install -r requirements.txt' 安装所有依赖。")
+MOVIEPY_AVAILABLE = False
 
 
 def generate_gap_segment(tmpdir, index, video_name, fontfile="C:/Windows/Fonts/msyh.ttc"):
-    if not MOVIEPY_AVAILABLE:
+    # 检查 moviepy 是否可用
+    try:
+        from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
+        MOVIEPY_AVAILABLE = True
+    except ImportError:
+        MOVIEPY_AVAILABLE = False
         raise ImportError("moviepy 库未安装，无法生成间隔片段。请运行 'pip install -r requirements.txt'")
     """
     使用 Pillow 生成 2 秒的间隔视频，显示居中的视频名称（淡入淡出效果）
@@ -251,7 +250,11 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile="C:/Windows/Fonts/m
     fps = TRANSCODE_PARAMS['fps']
     def make_silence(t):
         return 0.0
-    audio = AudioClip(make_silence, duration=duration, fps=44100)
+    try:
+        from moviepy import AudioClip
+        audio = AudioClip(make_silence, duration=duration, fps=44100)
+    except ImportError:
+        audio = None
     
     # 从图像序列创建视频片段
     clip = ImageSequenceClip(image_files, fps=fps)
@@ -273,7 +276,12 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile="C:/Windows/Fonts/m
     return gap_seg
 
 def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | None = None) -> bool:
-    if not MOVIEPY_AVAILABLE:
+    # 检查 moviepy 是否可用
+    try:
+        from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
+        MOVIEPY_AVAILABLE = True
+    except ImportError:
+        MOVIEPY_AVAILABLE = False
         print("❌ moviepy 库未安装，无法执行视频合并功能。")
         print("请运行 'pip install -r requirements.txt' 安装所有依赖。")
         return False
