@@ -192,7 +192,6 @@ def merge_ass_with_offsets(subtitle_entries: List[tuple], clip_durations: List[f
     print("[DEBUG] 字幕合并完成")
 
 
-from PIL import Image, ImageDraw, ImageFont
 import subprocess
 
 # Check if moviepy is available
@@ -202,6 +201,12 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
     """
     使用 Pillow 生成 2 秒的间隔视频，显示居中的视频名称（淡入淡出效果）
     """
+    # 延迟导入 PIL 相关模块
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except ImportError:
+        raise ImportError("PIL (Pillow) 库未安装，请运行 'pip install Pillow'")
+    
     print(f"[DEBUG] 生成间隔片段，索引: {index}, 名称: {video_name}")
     # 检查 moviepy 是否可用
     try:
