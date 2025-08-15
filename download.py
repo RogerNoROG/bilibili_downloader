@@ -155,3 +155,183 @@ def generate_download_bat(bv_list: List[str], save_path: str, sessdata: str) -> 
             print(f"[DEBUG] 为BV号生成命令: {bv}")
             f.write(f'"{exe}" -m yutto -c "{sessdata}" -d "{save_path}" {bv}\n')
     return bat
+
+
+def get_save_path() -> str:
+    """获取视频保存路径"""
+    print("[DEBUG] 获取视频保存路径")
+    save_path = os.path.abspath("download")
+    print(f"[DEBUG] 创建保存目录: {save_path}")
+    os.makedirs(save_path, exist_ok=True)
+    return save_path
+
+
+def extract_bv(text: str) -> List[str]:
+    """从文本中提取所有BV号"""
+    print(f"[DEBUG] 从文本中提取BV号: {text[:50]}...")
+    # BV号的正则表达式
+    bv_pattern = r'BV[0-9A-Za-z]{10}'
+    bv_list = re.findall(bv_pattern, text)
+    print(f"[DEBUG] 提取到 {len(bv_list)} 个BV号: {bv_list}")
+    # 去重但保持顺序
+    seen = set()
+    unique_bv_list = []
+    for bv in bv_list:
+        if bv not in seen:
+            seen.add(bv)
+            unique_bv_list.append(bv)
+    print(f"[DEBUG] 去重后 {len(unique_bv_list)} 个BV号: {unique_bv_list}")
+    return unique_bv_list
+
+
+def generate_download_sh(bv_list: List[str], save_path: str, sessdata: str) -> str:
+    project_root = _project_root()
+    sh = os.path.join(project_root, 'download_videos.sh')
+    print(f"📝 生成下载脚本（共 {len(bv_list)} 个 BV）...")
+    lines = [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail'
+    ]
+    py = shlex.quote(_resolve_venv_python())
+    save_q = shlex.quote(save_path)
+    sess_q = shlex.quote(sessdata)
+    for bv in bv_list:
+        bv_q = shlex.quote(bv)
+        lines.append(f"{py} -m yutto -c {sess_q} -d {save_q} {bv_q}")
+    with open(sh, 'w', encoding='utf-8', newline='\n') as f:
+        f.write('\n'.join(lines) + '\n')
+    try:
+        os.chmod(sh, os.stat(sh).st_mode | 0o111)
+    except Exception:
+        pass
+    return sh
+
+
+def _run_yutto_batch(bv_list: List[str], save_path: str, sessdata: str) -> None:
+    """使用项目虚拟环境中的 Python 逐个调用 yutto 下载。"""
+    py = _resolve_venv_python()
+    for bv in bv_list:
+        print(f"⏬ 开始下载 {bv} ...")
+        cmd = [py, '-m', 'yutto']
+        if sessdata:
+            cmd += ['-c', sessdata]
+        cmd += ['-d', save_path, bv]
+        subprocess.run(cmd, shell=False, check=False)
+
+
+def run_download() -> Tuple[str, float, float]:
+    print("[DEBUG] 开始执行下载任务")
+    save_path = get_save_path()
+    sessdata = get_sessdata()
+    print("📋 请输入包含 BV 号的文本，使用 Ctrl+Z 与回车结束输入：")
+    input_lines: List[str] = []
+    while True:
+        try:
+            input_lines.append(input())
+        except EOFError:
+            break
+    bv_list = extract_bv('\n'.join(input_lines))
+    if not bv_list:
+        sys.exit("❌ 未识别任何 BV")
+    # 生成并执行下载脚本
+    if sys.platform.startswith('win'):
+        script = generate_download_bat(bv_list, save_path, sessdata)
+        print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的 download_videos.bat！")
+        print("▶️ 正在启动下载脚本（新窗口），请等待其完成...")
+    else:
+        script = generate_download_sh(bv_list, save_path, sessdata)
+        print("⚠  接下来的过程可能出错，如果出错了请手动执行一次文件夹下的 download_videos.sh！")
+        print(f"▶️ 正在执行下载脚本：{script}，请等待其完成...")
+
+    # 记录下载前的文件状态
+    before_files = set(os.listdir(save_path)) if os.path.exists(save_path) else set()
+
+    start_time = time.time()
+    if sys.platform.startswith('win'):
+        subprocess.run(f'start "" /wait cmd /c "{script}"', shell=True)
+    else:
+        subprocess.run(['bash', script], shell=False, cwd=os.path.dirname(script))
+    end_time = time.time()
+    print("✅ 下载完成，继续后续操作...")
+
+    after_files = set(os.listdir(save_path)) if os.path.exists(save_path) else set()
+    new_files = after_files - before_files
+    new_video_files = [
+        os.path.join(save_path, f) for f in new_files
+        if f.lower().endswith(('.mp4', '.mkv', '.avi'))
+    ]
+    # 保持加入顺序（目录枚举差异可能导致顺序不稳定，优先用输入顺序）
+
+    # 保存新增文件列表供后续使用
+    # 记录顺序给合并模块使用
+    try:
+        from utils import set_last_download_files
+        set_last_download_files(new_video_files)
+    except Exception:
+        pass
+    return save_path, start_time, end_time
+
+
+def run_download_videos_only() -> None:
+    save_path = os.path.abspath("download")
+    os.makedirs(save_path, exist_ok=True)
+    print("请粘贴所有 BV 号（每行一个），输入完后按 Ctrl+Z（Win）或 Ctrl+D（Mac/Linux）结束：")
+    before_files = set(os.listdir(save_path))
+    start_time = time.time()
+
+    # 读取或获取 SESSDATA
+    sessdata = None
+    cache = "SESSDATA.txt"
+    if os.path.exists(cache):
+        try:
+            sessdata = open(cache, 'r', encoding='utf-8').read().strip()
+        except Exception:
+            sessdata = None
+    if not sessdata:
+        try:
+            sessdata = get_sessdata()
+        except Exception:
+            sessdata = None
+
+    try:
+        bv_list: List[str] = []
+        while True:
+            line = input()
+            if not line:
+                continue
+            bv = line.strip()
+            if bv.startswith("BV") and len(bv) == 12:
+                bv_list.append(bv)
+    except EOFError:
+        pass
+
+    if not bv_list:
+        print("❌ 未识别任何 BV")
+        return
+
+    _run_yutto_batch(bv_list, save_path, sessdata)
+
+    end_time = time.time()
+    print("✅ 下载流程结束。")
+
+    after_files = set(os.listdir(save_path))
+    new_files = [
+        os.path.join(save_path, f) for f in (after_files - before_files)
+        if f.lower().endswith(('.mp4', '.mkv', '.avi'))
+    ]
+    new_files = [
+        f for f in new_files
+        if os.path.getmtime(f) >= start_time - 2
+    ]
+    if not new_files:
+        print("⚠️ 未检测到新增视频文件。")
+    else:
+        print("📝 本次下载新增视频文件：")
+        for f in new_files:
+            print("   •", os.path.basename(f))
+
+    try:
+        from utils import set_last_download_files
+        set_last_download_files(new_files)
+    except Exception:
+        pass
