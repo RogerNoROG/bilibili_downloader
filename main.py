@@ -109,11 +109,24 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
             core_packages = ['moviepy', 'pillow', 'yutto']
             if has_display:
                 # 有图形界面，安装完整依赖
+                print(f"🖥️ 有图形界面环境，安装所有依赖: {core_packages + ['playwright']}")
                 subprocess.run([venv_pip, 'install'] + core_packages + ['playwright', '-q'], check=True)
             else:
                 # 无图形界面，不安装 playwright，但需要安装所有核心依赖
-                print("🖥️ 无图形界面环境，跳过 playwright 安装")
+                print(f"🖥️ 无图形界面环境，安装核心依赖: {core_packages}")
                 subprocess.run([venv_pip, 'install'] + core_packages + ['-q'], check=True)
+
+            # 验证安装的包
+            print("🔍 验证已安装的包...")
+            try:
+                result = subprocess.run([venv_pip, 'list'], capture_output=True, text=True, check=True)
+                installed_packages = result.stdout
+                print("📋 已安装的包列表:")
+                for line in installed_packages.split('\n'):
+                    if 'moviepy' in line.lower() or 'pillow' in line.lower() or 'yutto' in line.lower() or 'playwright' in line.lower():
+                        print(f"  {line}")
+            except subprocess.CalledProcessError:
+                print("⚠️ 无法获取已安装包列表")
 
             # 检查是否有图形界面环境
             has_display = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
@@ -188,6 +201,8 @@ def main():
         check_ffmpeg_installed()
     except ImportError as e:
         print(f"❌ 导入 utils 模块失败: {e}")
+        import traceback
+        traceback.print_exc()
         print("请检查依赖是否正确安装")
         sys.exit(1)
 
@@ -197,6 +212,8 @@ def main():
         from merge import merge_videos_with_best_hevc
     except ImportError as e:
         print(f"❌ 导入模块失败: {e}")
+        import traceback
+        traceback.print_exc()
         print("请检查依赖是否正确安装")
         sys.exit(1)
 
