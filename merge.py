@@ -13,7 +13,6 @@ from utils import (
 )
 
 # moviepy 将在需要时延迟导入
-MOVIEPY_AVAILABLE = False
 
 
 def choose_encoder() -> str:
@@ -208,12 +207,10 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
     try:
         print("[DEBUG] 尝试导入moviepy")
         from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
-        global MOVIEPY_AVAILABLE
-        MOVIEPY_AVAILABLE = True
+        moviepy_available = True
         print("[DEBUG] Moviepy导入成功")
     except ImportError:
-        global MOVIEPY_AVAILABLE
-        MOVIEPY_AVAILABLE = False
+        moviepy_available = False
         print("[DEBUG] Moviepy导入失败")
         raise ImportError("moviepy 库未安装，无法生成间隔片段。请运行 'pip install -r requirements.txt'")
     
@@ -359,14 +356,13 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
 def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | None = None) -> bool:
     print(f"[DEBUG] 开始合并视频，下载目录: {download_dir}, 编码器: {encoder}")
     # 检查 moviepy 是否可用
-    global MOVIEPY_AVAILABLE
     try:
         print("[DEBUG] 检查moviepy是否可用")
         from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
-        MOVIEPY_AVAILABLE = True
+        moviepy_available = True
         print("[DEBUG] Moviepy可用")
     except ImportError as e:
-        MOVIEPY_AVAILABLE = False
+        moviepy_available = False
         print("❌ moviepy 库未安装，无法执行视频合并功能。")
         print("请运行 'pip install -r requirements.txt' 安装所有依赖。")
         print(f"[DEBUG] ImportError: {e}")
