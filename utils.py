@@ -278,12 +278,17 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
 
         # 在 Linux 下，为了确保硬件编解码权限，若非 root 且存在 sudo，则使用 sudo 执行
         if sys.platform.startswith('linux'):
-            try:
-                # 检查是否在 Unix 系统上（有 geteuid 方法）
-                is_root = (os.geteuid() == 0) if hasattr(os, 'geteuid') else False
-                print(f"[DEBUG] Linux系统权限检查，是否为root: {is_root}")
-            except Exception:
-                is_root = False
+            # 定义一个内部函数来检查 Unix 权限相关方法
+            def _is_root() -> bool:
+                try:
+                    return os.geteuid() == 0
+                except AttributeError:
+                    # 如果 geteuid 不可用（如在 Windows 上），返回 False
+                    return False
+            
+            is_root = _is_root()
+            print(f"[DEBUG] Linux系统权限检查，是否为root: {is_root}")
+            
             if not is_root and shutil.which('sudo'):
                 print("[DEBUG] 非root用户且存在sudo，使用sudo执行")
                 cmd = ['sudo', '-E'] + cmd
@@ -301,11 +306,16 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
         # 如以 sudo 执行，尽量将输出文件归还给当前用户，避免后续操作权限问题
         try:
             if sys.platform.startswith('linux') and shutil.which('sudo'):
-                try:
-                    # 检查是否在 Unix 系统上（有 geteuid 方法）
-                    is_root = (os.geteuid() == 0) if hasattr(os, 'geteuid') else False
-                except Exception:
-                    is_root = False
+                # 定义一个内部函数来检查 Unix 权限相关方法
+                def _is_root() -> bool:
+                    try:
+                        return os.geteuid() == 0
+                    except AttributeError:
+                        # 如果 geteuid 不可用（如在 Windows 上），返回 False
+                        return False
+                
+                is_root = _is_root()
+                
                 if not is_root and result.returncode == 0:
                     # 约定：命令最后一个参数是输出路径（本项目当前所有调用均符合）
                     if cmd and isinstance(cmd[-1], str) and cmd[-1] not in ('-', 'pipe:', '|'):
@@ -313,10 +323,18 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
                         print(f"[DEBUG] 检查输出文件权限: {output_path}")
                         if os.path.exists(output_path):
                             try:
-                                # 检查是否在 Unix 系统上（有 getuid 和 getgid 方法）
-                                if hasattr(os, 'getuid') and hasattr(os, 'getgid'):
-                                    uid = os.getuid()
-                                    gid = os.getgid()
+                                # 定义一个内部函数来获取 Unix 用户/组 ID
+                                def _get_uid_gid():
+                                    try:
+                                        uid = os.getuid()
+                                        gid = os.getgid()
+                                        return uid, gid
+                                    except AttributeError:
+                                        # 如果 getuid/getgid 不可用（如在 Windows 上），返回 None
+                                        return None, None
+                                
+                                uid, gid = _get_uid_gid()
+                                if uid is not None and gid is not None:
                                     print(f"[DEBUG] 修改文件所有者为 {uid}:{gid}")
                                     subprocess.run(['sudo', 'chown', f'{uid}:{gid}', output_path],
                                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
