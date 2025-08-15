@@ -197,7 +197,6 @@ from PIL import Image, ImageDraw, ImageFont
 import subprocess
 
 # Check if moviepy is available
-MOVIEPY_AVAILABLE = False
 
 
 def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
