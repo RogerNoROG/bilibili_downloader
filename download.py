@@ -88,10 +88,12 @@ def get_sessdata() -> str:
                 sessdata = None
                 print("[DEBUG] 开始监听SESSDATA Cookie")
                 for _ in range(60):
-                    for c in context.cookies():
-                        if c['name'] == 'SESSDATA':
-                            sessdata = c['value']
-                            print(f"[DEBUG] 获取到SESSDATA: {sessdata[:10]}...")
+                    cookies = context.cookies()
+                    for c in cookies:
+                        # 使用 get 方法安全访问可能不存在的键
+                        if c.get('name') == 'SESSDATA':
+                            sessdata = c.get('value')
+                            print(f"[DEBUG] 获取到SESSDATA: {sessdata[:10] if sessdata else ''}...")
                             break
                     if sessdata:
                         break
@@ -280,18 +282,18 @@ def run_download_videos_only() -> None:
     start_time = time.time()
 
     # 读取或获取 SESSDATA
-    sessdata = None
+    sessdata: str = ""  # 明确指定类型
     cache = "SESSDATA.txt"
     if os.path.exists(cache):
         try:
             sessdata = open(cache, 'r', encoding='utf-8').read().strip()
         except Exception:
-            sessdata = None
+            sessdata = ""
     if not sessdata:
         try:
             sessdata = get_sessdata()
         except Exception:
-            sessdata = None
+            sessdata = ""
 
     try:
         bv_list: List[str] = []

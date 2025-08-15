@@ -279,7 +279,8 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
         # 在 Linux 下，为了确保硬件编解码权限，若非 root 且存在 sudo，则使用 sudo 执行
         if sys.platform.startswith('linux'):
             try:
-                is_root = (os.geteuid() == 0)
+                # 检查是否在 Unix 系统上（有 geteuid 方法）
+                is_root = (os.geteuid() == 0) if hasattr(os, 'geteuid') else False
                 print(f"[DEBUG] Linux系统权限检查，是否为root: {is_root}")
             except Exception:
                 is_root = False
@@ -301,7 +302,8 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
         try:
             if sys.platform.startswith('linux') and shutil.which('sudo'):
                 try:
-                    is_root = (os.geteuid() == 0)
+                    # 检查是否在 Unix 系统上（有 geteuid 方法）
+                    is_root = (os.geteuid() == 0) if hasattr(os, 'geteuid') else False
                 except Exception:
                     is_root = False
                 if not is_root and result.returncode == 0:
@@ -310,11 +312,17 @@ def run_ffmpeg(cmd: list, timeout_seconds: int | None = None):
                         output_path = cmd[-1]
                         print(f"[DEBUG] 检查输出文件权限: {output_path}")
                         if os.path.exists(output_path):
-                            uid = os.getuid()
-                            gid = os.getgid()
-                            print(f"[DEBUG] 修改文件所有者为 {uid}:{gid}")
-                            subprocess.run(['sudo', 'chown', f'{uid}:{gid}', output_path],
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            try:
+                                # 检查是否在 Unix 系统上（有 getuid 和 getgid 方法）
+                                if hasattr(os, 'getuid') and hasattr(os, 'getgid'):
+                                    uid = os.getuid()
+                                    gid = os.getgid()
+                                    print(f"[DEBUG] 修改文件所有者为 {uid}:{gid}")
+                                    subprocess.run(['sudo', 'chown', f'{uid}:{gid}', output_path],
+                                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            except Exception as e:
+                                print(f"[DEBUG] 修改文件权限时出错: {e}")
+                                pass
         except Exception as e:
             print(f"[DEBUG] 修改文件权限时出错: {e}")
             traceback.print_exc()

@@ -193,12 +193,7 @@ def merge_ass_with_offsets(subtitle_entries: List[tuple], clip_durations: List[f
     print("[DEBUG] 字幕合并完成")
 
 
-import os
 from PIL import Image, ImageDraw, ImageFont
-import subprocess
-
-# Check if moviepy is available
-MOVIEPY_AVAILABLE = False
 
 
 def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
@@ -210,6 +205,7 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
     try:
         print("[DEBUG] 尝试导入moviepy")
         from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
+        from moviepy import AudioClip
         global MOVIEPY_AVAILABLE
         MOVIEPY_AVAILABLE = True
         print("[DEBUG] Moviepy导入成功")
@@ -301,9 +297,9 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
             bbox = draw.textbbox((0, 0), video_name, font=font)
             text_width = bbox[2] - bbox[0]
             text_height = bbox[3] - bbox[1]
-        except AttributeError:
-            # 旧版本PIL使用textsize
-            text_width, text_height = draw.textsize(video_name, font=font)
+        except:
+            # 如果失败，默认一个尺寸
+            text_width, text_height = 100, 20
         print(f"[DEBUG] 文本尺寸: {text_width}x{text_height}")
         
         position = ((width - text_width) // 2, (height - text_height) // 2)
@@ -327,7 +323,6 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
     def make_silence(t):
         return 0.0
     try:
-        from moviepy import AudioClip
         print("[DEBUG] 创建静音音频")
         audio = AudioClip(make_silence, duration=duration, fps=44100)
     except ImportError:
@@ -624,7 +619,7 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             
             # 使用 ffmpeg 进行硬件编码转码
             print(f"🔄 使用硬件编码器 {encoder} 进行最终转码...")
-            import subprocess
+            import subprocess as sp
             cmd = ['ffmpeg', '-y', '-i', temp_output]
             
             # 根据编码器类型添加硬件加速参数
@@ -650,12 +645,12 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
             
             try:
                 print(f"[DEBUG] 硬件编码命令: {' '.join(cmd)}")
-                subprocess.run(cmd, check=True)
+                sp.run(cmd, check=True)
                 # 删除临时文件
                 if os.path.exists(temp_output):
                     print(f"[DEBUG] 删除临时文件: {temp_output}")
                     os.remove(temp_output)
-            except subprocess.CalledProcessError as e:
+            except sp.CalledProcessError as e:
                 print(f"⚠️ 硬件编码失败，回退到 CPU 编码: {e}")
                 traceback.print_exc()
                 # 如果硬件编码失败，直接使用临时文件
@@ -686,8 +681,11 @@ def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | 
         audio_path = os.path.splitext(output)[0] + ".mp3"
         print(f"[DEBUG] 音频路径: {audio_path}")
         # 创建音频文件（使用MoviePy）
-        final_video.audio.write_audiofile(audio_path, codec='libmp3lame', bitrate="320k")
-        print(f"✅ 音轨分离完成：{audio_path}")
+        if final_video.audio is not None:
+            final_video.audio.write_audiofile(audio_path, codec='libmp3lame', bitrate="320k")
+            print(f"✅ 音轨分离完成：{audio_path}")
+        else:
+            print("ℹ️ 视频没有音频轨道，跳过音轨分离")
 
         print("\n📢 合并已完成，请输入合并后视频的新文件名（不含路径和扩展名，自动保存在脚本同一目录下）：")
         while True:

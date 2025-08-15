@@ -177,16 +177,31 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
             except ImportError:
                 print(f"🔧 正在安装：{pkg}")
                 try:
+                    # 添加镜像源安装
                     subprocess.run([
                         sys.executable, '-m', 'pip', 'install', pkg,
+                        '--index-url', 'https://pypi.tuna.tsinghua.edu.cn/simple',
+                        '--trusted-host', 'pypi.tuna.tsinghua.edu.cn'
                     ], check=True)
                 except subprocess.CalledProcessError as e:
                     print(f"❌ 安装 {pkg} 失败: {e}")
                     print("请手动安装依赖:")
-                    print(f"pip install {pkg}")
+                    print(f"pip install {pkg} --index-url https://pypi.tuna.tsinghua.edu.cn/simple")
                     sys.exit(1)
+        
+        # 设置 Playwright 下载镜像并安装 Chromium
         os.environ["PLAYWRIGHT_DOWNLOAD_HOST"] = "https://npmmirror.com/mirrors/playwright"
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=False)
+        try:
+            print("🌐 设置 Playwright 下载镜像源...")
+            print("🔧 安装 Playwright 浏览器内核...")
+            # 安装 Playwright 依赖和 Chromium 浏览器
+            subprocess.run([sys.executable, "-m", "playwright", "install-deps", "chromium"], check=True)
+            subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+            print("✅ Playwright 浏览器内核安装完成")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Playwright 浏览器安装失败: {e}")
+            print("提示：您也可以手动运行以下命令安装:")
+            print("npx playwright install chromium")
 
 def main():
     print("=" * 60)
