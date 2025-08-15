@@ -194,6 +194,10 @@ def merge_ass_with_offsets(subtitle_entries: List[tuple], clip_durations: List[f
 
 
 from PIL import Image, ImageDraw, ImageFont
+import subprocess
+
+# Check if moviepy is available
+MOVIEPY_AVAILABLE = False
 
 
 def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
@@ -205,7 +209,6 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
     try:
         print("[DEBUG] 尝试导入moviepy")
         from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
-        from moviepy import AudioClip
         global MOVIEPY_AVAILABLE
         MOVIEPY_AVAILABLE = True
         print("[DEBUG] Moviepy导入成功")
@@ -323,6 +326,7 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
     def make_silence(t):
         return 0.0
     try:
+        from moviepy import AudioClip
         print("[DEBUG] 创建静音音频")
         audio = AudioClip(make_silence, duration=duration, fps=44100)
     except ImportError:
@@ -356,17 +360,17 @@ def generate_gap_segment(tmpdir, index, video_name, fontfile=None):
 def merge_videos_with_best_hevc(download_dir: str | None = None, encoder: str | None = None) -> bool:
     print(f"[DEBUG] 开始合并视频，下载目录: {download_dir}, 编码器: {encoder}")
     # 检查 moviepy 是否可用
+    global MOVIEPY_AVAILABLE
     try:
         print("[DEBUG] 检查moviepy是否可用")
         from moviepy import ImageClip, AudioFileClip, VideoFileClip, concatenate_videoclips, ImageSequenceClip
-        global MOVIEPY_AVAILABLE
         MOVIEPY_AVAILABLE = True
         print("[DEBUG] Moviepy可用")
-    except ImportError:
-        global MOVIEPY_AVAILABLE
+    except ImportError as e:
         MOVIEPY_AVAILABLE = False
         print("❌ moviepy 库未安装，无法执行视频合并功能。")
         print("请运行 'pip install -r requirements.txt' 安装所有依赖。")
+        print(f"[DEBUG] ImportError: {e}")
         return False
         
     def work_dir_path(base_dir: str) -> str:
