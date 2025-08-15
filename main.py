@@ -103,27 +103,17 @@ trusted-host = pypi.tuna.tsinghua.edu.cn
             # 检查是否有图形界面环境
             has_display = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
             
-            # 检查requirements.txt是否存在
-            requirements_file = os.path.join(project_root, 'requirements.txt')
-            if os.path.exists(requirements_file):
-                print("📦 从 requirements.txt 安装依赖...")
-                if has_display:
-                    # 有图形界面，安装所有依赖
-                    subprocess.run([venv_pip, 'install', '-r', requirements_file, '-q'], check=True)
-                else:
-                    # 无图形界面，跳过playwright安装
-                    print("🖥️ 无图形界面环境，跳过 playwright 安装")
-                    # 逐个安装除playwright外的依赖
-                    subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'yutto', '-q'], check=True)
+            # 不使用 requirements.txt，手动安装依赖
+            print("📦 安装默认依赖...")
+            # 确保安装所有必需的依赖，包括pillow (PIL)
+            core_packages = ['moviepy', 'pillow', 'yutto']
+            if has_display:
+                # 有图形界面，安装完整依赖
+                subprocess.run([venv_pip, 'install'] + core_packages + ['playwright', '-q'], check=True)
             else:
-                print("📦 安装默认依赖...")
-                if has_display:
-                    # 有图形界面，安装完整依赖
-                    subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'playwright', 'yutto', '-q'], check=True)
-                else:
-                    # 无图形界面，不安装 playwright，但需要安装 pillow 和其他依赖
-                    print("🖥️ 无图形界面环境，跳过 playwright 安装")
-                    subprocess.run([venv_pip, 'install', 'moviepy', 'pillow', 'yutto', '-q'], check=True)
+                # 无图形界面，不安装 playwright，但需要安装所有核心依赖
+                print("🖥️ 无图形界面环境，跳过 playwright 安装")
+                subprocess.run([venv_pip, 'install'] + core_packages + ['-q'], check=True)
 
             # 检查是否有图形界面环境
             has_display = os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')
